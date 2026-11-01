@@ -21,14 +21,16 @@
     <parent>
         <groupId>org.apache.storm</groupId>
         <artifactId>flux</artifactId>
-        <version>2.5.0-SNAPSHOT</version>
+        <version>3.1.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>flux-wrappers</artifactId>
+
+
+    <name>Storm Flux Wrappers</name>
     <packaging>jar</packaging>
 
-    <name>flux-wrappers</name>
 
     <dependencies>
         <dependency>
@@ -50,6 +52,16 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.openrewrite.maven</groupId>
+                <artifactId>rewrite-maven-plugin</artifactId>
+                <!--Note - the version/config would be inherited-->
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.gmavenplus</groupId>
+                <artifactId>gmavenplus-plugin</artifactId>
+                <!--Note - the version/config would be inherited-->
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>

@@ -21,12 +21,12 @@
     <parent>
         <groupId>org.apache</groupId>
         <artifactId>apache</artifactId>
-        <version>21</version>
+        <version>40</version>
     </parent>
 
     <groupId>org.apache.storm</groupId>
     <artifactId>storm</artifactId>
-    <version>2.5.0-SNAPSHOT</version>
+    <version>3.1.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Storm</name>
     <description>Distributed and fault-tolerant realtime computation</description>
@@ -55,229 +55,32 @@
         </mailingList>
     </mailingLists>
 
-    <developers>
-        <developer>
-            <id>nathanmarz</id>
-            <name>Nathan Marz</name>
-            <email>nathan@nathanmarz.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-8</timezone>
-        </developer>
-        <developer>
-            <id>ptgoetz</id>
-            <name>P. Taylor Goetz</name>
-            <email>ptgoetz@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-5</timezone>
-        </developer>
-        <developer>
-            <id>xumingming</id>
-            <name>James Xu</name>
-            <email>xumingming@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone />
-        </developer>
-        <developer>
-            <id>afeng</id>
-            <name>Andy Feng</name>
-            <email>afeng@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-8</timezone>
-        </developer>
-        <developer>
-            <id>davidlao</id>
-            <name>David Lao</name>
-            <email>davidlao@microsoft.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-8</timezone>
-        </developer>
-        <developer>
-            <id>mrflip</id>
-            <name>Flip Kromer</name>
-            <email>mrflip@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone />
-        </developer>
-        <developer>
-            <id>jjackson</id>
-            <name>Jason Jackson</name>
-            <email>jasonjckn@gmail.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-8</timezone>
-        </developer>
-        <developer>
-            <id>bobby</id>
-            <name>Robert Evans</name>
-            <email>evans@yahoo-inc.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>dagit</id>
-            <name>Derek Dagit</name>
-            <email>derekd@yahoo-inc.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>miguno</id>
-            <name>Michael G. Noll</name>
-            <email>michael@michael-noll.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>+1</timezone>
-        </developer>
-        <developer>
-            <id>dossett</id>
-            <name>Aaron Dossett</name>
-            <email>dossett@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>jerrypeng</id>
-            <name>Boyang Jerry Peng</name>
-            <email>jerrypeng@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>longda</id>
-            <name>Longda Feng</name>
-            <email>longda@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>+8</timezone>
-        </developer>
-        <developer>
-            <id>abhishek</id>
-            <name>Abhishek Agarwal</name>
-            <email>abhishek@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>+5.5</timezone>
-        </developer>
-        <developer>
-            <id>satishd</id>
-            <name>Satish Duggana</name>
-            <email>satishd@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>+5.5</timezone>
-        </developer>
-        <developer>
-            <id>vesense</id>
-            <name>Xin Wang</name>
-            <email>xinwang@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>+8</timezone>
-        </developer>
-        <developer>
-            <id>hmclouro</id>
-            <name>Hugo da Cruz Louro</name>
-            <email>hmclouro@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-8</timezone>
-        </developer>
-        <developer>
-            <id>roshannaik</id>
-            <name>Roshan Naik</name>
-            <email>roshannaik@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-8</timezone>
-        </developer>
-        <developer>
-            <id>Ethanlm</id>
-            <name>Ethan Li</name>
-            <email>ethanli@apache.org</email>
-            <roles>	
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>govind-menon</id>
-            <name>Govind Menon</name>
-            <email>govind@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>agresch</id>
-            <name>Aaron Gresch</name>
-            <email>agresch@gmail.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>ruili</id>
-            <name>Rui Li</name>
-            <email>ruili@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>bipinprasad</id>
-            <name>Bipin Prasad</name>
-            <email>bipinprasad@apache.org</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-
-    </developers>
-
     <scm>
-        <connection>scm:git:https://gitbox.apache.org/repos/asf/storm.git</connection>
+        <connection>git@github.com:apache/storm.git</connection>
         <developerConnection>scm:git:https://gitbox.apache.org/repos/asf/storm.git</developerConnection>
-        <url>https://gitbox.apache.org/repos/asf/storm</url>
+        <url>https://github.com/apache/storm</url>
+        <tag>v3.0.0</tag>
     </scm>
 
     <issueManagement>
-        <system>jira</system>
-        <url>https://issues.apache.org/jira/browse/STORM</url>
+        <system>github</system>
+        <url>https://github.com/apache/storm/issues</url>
     </issueManagement>
 
     <properties>
+        <javaVersion>25</javaVersion>
+        <!-- checkstyle auto-fix tooling (run on demand, see storm-checkstyle/README.md) -->
+        <rewrite-maven-plugin.version>6.46.1</rewrite-maven-plugin.version>
+        <rewrite-static-analysis.version>2.41.1</rewrite-static-analysis.version>
+        <gmavenplus.version>5.1.0</gmavenplus.version>
+        <groovy.version>6.0.0</groovy.version>
+        <!-- Used by both the checkstyle check and checkstyle-autofix.groovy. If you change this, you should
+        also update the storm_checkstyle.xml file to be based on the google_checks.xml from the version
+        of checkstyle you are choosing. -->
+        <checkstyle.version>14.3.0</checkstyle.version>
+        <maven.javadoc.failOnError>false</maven.javadoc.failOnError>
+        <maven.javadoc.failOnWarnings>false</maven.javadoc.failOnWarnings>
+
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <test.extra.args>-Djava.net.preferIPv4Stack=true</test.extra.args>
         <!-- license-maven-plugin that needs to be overridable from command line -->
@@ -287,100 +90,99 @@
         <license.outputDirectory>${project.basedir}</license.outputDirectory>
 
         <!-- dependency versions -->
-        <clojure.version>1.10.0</clojure.version>
-        <commons-compress.version>1.21</commons-compress.version>
-        <commons-io.version>2.11.0</commons-io.version>
-        <commons-lang.version>2.6</commons-lang.version>
-        <commons-exec.version>1.3</commons-exec.version>
-        <commons-collections.version>3.2.2</commons-collections.version>
-        <commons-fileupload.version>1.3.3</commons-fileupload.version>
-        <commons-codec.version>1.11</commons-codec.version>
-        <commons-cli.version>1.4</commons-cli.version>
-        <curator.version>4.3.0</curator.version>
-        <json-simple.version>1.1</json-simple.version>
-        <jetty.version>9.4.45.v20220203</jetty.version>
-        <clojure.tools.logging.version>0.2.3</clojure.tools.logging.version>
-        <carbonite.version>1.5.0</carbonite.version>
-        <snakeyaml.version>1.32</snakeyaml.version>
-        <httpclient.version>4.5.13</httpclient.version>
-        <jctools.version>2.0.1</jctools.version>
-        <jgrapht.version>0.9.0</jgrapht.version>
-        <guava.version>27.0.1-jre</guava.version>
-        <auto-service.version>1.0-rc4</auto-service.version>
-        <netty.version>4.1.30.Final</netty.version>
+        <commons-compress.version>1.28.0</commons-compress.version>
+        <zstd-jni.version>1.5.7-25</zstd-jni.version>
+        <commons-io.version>2.22.0</commons-io.version>
+        <commons-lang3.version>3.21.0</commons-lang3.version>
+        <commons-exec.version>1.6.0</commons-exec.version>
+        <commons-collections.version>4.6.0</commons-collections.version>
+        <commons-fileupload.version>1.6.0</commons-fileupload.version>
+        <commons-codec.version>1.23.0</commons-codec.version>
+        <commons-text.version>1.15.0</commons-text.version>
+        <commons-cli.version>1.11.0</commons-cli.version>
+        <curator.version>5.9.0</curator.version>
+        <jetty.version>12.1.14</jetty.version>
+        <snakeyaml.version>2.7</snakeyaml.version>
+        <httpclient.version>4.5.14</httpclient.version>
+        <httpclient.core.version>4.4.16</httpclient.core.version>
+        <jctools.version>4.0.7</jctools.version>
+        <jgrapht.version>1.5.3</jgrapht.version>
+        <guava.version>33.7.2-jre</guava.version>
+        <!-- Guava's nullness-annotation transitive. Bump it together with guava.version, and
+             keep it equal to the value in that Guava release's guava-parent pom - never above.
+             It is pinned because JUnit 6 also declares org.jspecify:jspecify, at a nearer depth
+             than Guava, so without the managed entry below the daemon (lib) and worker
+             (lib-common) classpaths of the binary distribution mediate to different versions
+             and dedup-libs.py refuses to assemble the tarball. -->
+        <jspecify.version>1.0.1</jspecify.version>
+        <auto-service.version>1.1.1</auto-service.version>
+        <netty-tcnative.version>2.0.84.Final</netty-tcnative.version>
+        <netty.version>4.2.19.Final</netty.version>
         <sysout-over-slf4j.version>1.0.2</sysout-over-slf4j.version>
-        <log4j.version>2.17.1</log4j.version>
-        <slf4j.version>1.7.36</slf4j.version>
-        <metrics.version>3.2.6</metrics.version>
-        <mockito.version>3.0.0</mockito.version>
-        <zookeeper.version>3.5.9</zookeeper.version>
-        <jline.version>0.9.94</jline.version>
-        <hive.version>2.3.9</hive.version>
-        <hadoop.version>2.10.1</hadoop.version>
-        <hdfs.version>${hadoop.version}</hdfs.version>
-        <hbase.version>2.1.3</hbase.version>
-        <kryo.version>4.0.2</kryo.version>
-        <servlet.version>3.1.0</servlet.version>
-        <joda-time.version>2.3</joda-time.version>
-        <thrift.version>0.13.0</thrift.version>
-        <junit.jupiter.version>5.5.1</junit.jupiter.version>
-        <surefire.version>3.0.0-M5</surefire.version>
-        <awaitility.version>3.1.0</awaitility.version>
-        <hdrhistogram.version>2.1.10</hdrhistogram.version>
-        <hamcrest.version>2.2</hamcrest.version>
-        <cassandra.version>2.1.7</cassandra.version>
-        <elasticsearch.version>5.2.2</elasticsearch.version>
-        <calcite.version>1.14.0</calcite.version>
-        <mongodb.version>3.2.0</mongodb.version>
-        <solr.version>5.2.1</solr.version>
-        <jpmml.version>1.0.22</jpmml.version>
-        <jedis.version>2.9.0</jedis.version>
-        <activemq.version>5.16.5</activemq.version>
-        <rocketmq.version>4.2.0</rocketmq.version>
+        <log4j.version>2.26.1</log4j.version>
+        <slf4j.version>2.0.20</slf4j.version>
+        <metrics.version>4.2.40</metrics.version>
+        <mockito.version>5.24.0</mockito.version>
+        <zookeeper.version>3.9.7</zookeeper.version>
+        <snappy.version>1.1.10.12</snappy.version>
+        <jline.version>2.14.6</jline.version>
+        <hikari.version>7.1.0</hikari.version>
+        <hadoop.version>3.5.0</hadoop.version>
+        <hbase.version>2.6.6-hadoop3</hbase.version>
+        <!-- Pinned deliberately: storm-iceberg must stay buildable against the Java baseline
+             above, so this is bumped explicitly rather than tracking the newest release. -->
+        <iceberg.version>1.12.0</iceberg.version>
+        <kryo.version>5.7.1</kryo.version>
+        <objensis.version>3.6</objensis.version>
+        <jakarta.servlet.version>6.1.0</jakarta.servlet.version>
+        <thrift.version>0.24.0</thrift.version>
+        <junit.jupiter.version>6.1.3</junit.jupiter.version>
+        <surefire.version>3.6.1</surefire.version>
+        <awaitility.version>4.3.0</awaitility.version>
+        <hdrhistogram.version>2.2.2</hdrhistogram.version>
+        <hamcrest.version>3.0</hamcrest.version>
+        <jedis.version>8.0.1</jedis.version>
+        <activemq.version>6.4.0</activemq.version>
+        <commons-logging.version>1.4.0</commons-logging.version>
 
-        <jackson.version>2.10.5</jackson.version>
-        <jackson.databind.version>2.10.5.1</jackson.databind.version>
-        
-        <storm.kafka.client.version>0.11.0.3</storm.kafka.client.version>
+        <jackson.version>2.22.4</jackson.version>
+        <jackson.databind.version>2.22.3</jackson.databind.version>
+        <storm.kafka.client.version>4.3.1</storm.kafka.client.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
 
-        <!-- Java and clojure build lifecycle test properties are defined here to avoid having to create a default profile -->
         <java.unit.test.exclude.groups>PerformanceTest</java.unit.test.exclude.groups>
-        <!-- by default the clojure test set are all clojure tests that are not integration tests. This property is overridden in the profiles -->
-        <clojure.test.set>!integration.*</clojure.test.set>
         <skipITs>true</skipITs>
 
-        <maven-resolver.version>1.3.3</maven-resolver.version>
-        <maven.version>3.6.0</maven.version>
-        <azure-eventhubs.version>0.13.1</azure-eventhubs.version>
-        <jersey.version>2.29</jersey.version>
-        <dropwizard.version>1.3.19</dropwizard.version>
-        <j2html.version>1.0.0</j2html.version>
-        <jool.version>0.9.12</jool.version>
-        <caffeine.version>2.3.5</caffeine.version>
-        <jakarta-jaxb-version>2.3.2</jakarta-jaxb-version>
-        <jakarta-activation-version>1.2.1</jakarta-activation-version>
-        <jaxb-version>2.3.0</jaxb-version>
-        <activation-version>1.1.1</activation-version>
-        <rocksdb-version>6.27.3</rocksdb-version>
+        <maven-resolver.version>1.9.27</maven-resolver.version>
+        <maven.version>3.9.16</maven.version>
+        <jersey.version>3.1.11</jersey.version>
+        <dropwizard.version>5.0.2</dropwizard.version>
+        <j2html.version>1.6.0</j2html.version>
+        <caffeine.version>3.3.1</caffeine.version>
+        <jakarta-jaxb-version>4.0.5</jakarta-jaxb-version>
+        <jakarta-activation-version>2.0.1</jakarta-activation-version>
+        <jakarta-jaxws-version>4.0.0</jakarta-jaxws-version>
+        <jaxb-version>2.3.1</jaxb-version>
+        <rocksdb-jni-version>11.8.1</rocksdb-jni-version>
+        <json-smart.version>2.6.0</json-smart.version>
+        <byte-buddy.version>1.18.16</byte-buddy.version>
+        <gson.version>2.14.0</gson.version>
 
         <!-- see intellij profile below... This fixes an annoyance with intellij -->
         <provided.scope>provided</provided.scope>
+        <asm.version>9.10.1</asm.version>
+        <error_prone_annotations.version>2.50.0</error_prone_annotations.version>
+        <bouncycastle.version>1.86</bouncycastle.version>
     </properties>
 
     <modules>
         <module>storm-shaded-deps</module>
         <module>storm-checkstyle</module>
-        <module>storm-multilang/javascript</module>
-        <module>storm-multilang/python</module>
-        <module>storm-multilang/ruby</module>
-        <module>storm-buildtools/maven-shade-clojure-transformer</module>
-        <module>storm-buildtools/storm-maven-plugins</module>
+        <module>storm-multilang</module>
         <module>storm-client</module>
         <module>storm-server</module>
         <module>storm-core</module>
         <module>storm-webapp</module>
-        <module>storm-clojure</module>
-        <module>storm-clojure-test</module>
         <module>storm-submit-tools</module>
     </modules>
 
@@ -426,6 +228,7 @@
                             <excludes>
                                 <!-- exclude maven artifacts -->
                                 <exclude>**/target/**</exclude>
+                                <exclude>**/target/rat.txt</exclude>
                                 <!-- exclude intellij projects -->
                                 <exclude>**/*.iml</exclude>
                                 <exclude>**/.idea/**</exclude>
@@ -443,6 +246,7 @@
                                 <!-- exclude CHANGELOG, VERSION, AND TODO files -->
                                 <exclude>**/CHANGELOG.md</exclude>
                                 <exclude>**/README.md</exclude>
+                                <exclude>**/AGENTS.md</exclude>
                                 <exclude>**/README.markdown</exclude>
                                 <exclude>**/DEVELOPER.md</exclude>
                                 <exclude>**/RELEASING.md</exclude>
@@ -459,34 +263,20 @@
                                 <!-- thrift-generated code -->
                                 <exclude>**/src/py/**</exclude>
 
-                                <!-- Used as part of travis-ci build -->
+                                <!-- Used as part of GitHub action build -->
                                 <exclude>install.txt</exclude>
-                                <exclude>storm-shaded-deps/install-shade.txt</exclude>
-                                <!-- the following are in the LICENSE file -->
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/jquery.dataTables.1.10.4.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/css/jquery.dataTables.1.10.4.min.css</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/images/*</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/bootstrap-3.3.1.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/css/bootstrap-3.3.1.min.css</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/dataTables.bootstrap.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/css/dataTables.bootstrap.css</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/jsonFormatter.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/css/jsonFormatter.min.css</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/jquery-3.5.1.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/jquery.cookies.2.2.0.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/moment.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/jquery.blockUI.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/url.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/jquery.mustache.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/typeahead.jquery.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/cytoscape-dagre.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/dagre.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/esprima.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/js-yaml.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/js/vis.min.js</exclude>
-                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/css/vis.min.css</exclude>
+                                <exclude>**/install-shade.txt</exclude>
+                                <!-- storm-webapp static assets and frontend build artifacts -->
+                                <exclude>**/src/main/java/org/apache/storm/daemon/ui/WEB-INF/images/*
+                                </exclude>
+                                <!-- npm / webpack artifacts -->
+                                <exclude>**/node_modules/**</exclude>
+                                <exclude>**/package-lock.json</exclude>
+                                <exclude>**/storm-webapp/node/**</exclude>
                                 <exclude>**/src/main/resources/Audit.50.csv</exclude>
-                                <exclude>**/src/main/resources/KNIME_PMML_4.1_Examples_single_audit_logreg.xml</exclude>
+                                <exclude>
+                                    **/src/main/resources/KNIME_PMML_4.1_Examples_single_audit_logreg.xml
+                                </exclude>
                                 <exclude>**/src/main/sampledata/**</exclude>
 
                                 <!-- generated by shade plugin -->
@@ -502,7 +292,9 @@
                                 <exclude>**/src/test/resources/test-3072.log.test</exclude>
                                 <exclude>**/src/test/resources/small-worker.log.test</exclude>
                                 <exclude>**/src/test/resources/test-worker.log.test</exclude>
-                                <exclude>**/src/test/resources/logviewer-search-context-tests.log.test</exclude>
+                                <exclude>**/src/test/resources/logviewer-search-context-tests.log.test
+                                </exclude>
+                                <exclude>**/dev-tools/cluster/grafana/dashboards/*.json</exclude>
 
                                 <!-- StormSQL -->
                                 <exclude>**/src/codegen/config.fmpp</exclude>
@@ -513,6 +305,9 @@
 
                                 <!-- Vagrant related files -->
                                 <exclude>integration-test/config/.vagrant/**</exclude>
+
+                                <!-- flagged since apache-rat-plugin 0.18 -->
+                                <exclude>flux/flux-core/src/main/resources/splash.txt</exclude>
 
                             </excludes>
                         </configuration>
@@ -543,8 +338,7 @@
         <profile>
             <id>dist</id>
             <modules>
-                <module>storm-dist/binary</module>
-                <module>storm-dist/source</module>
+                <module>storm-dist</module>
             </modules>
             <build>
                 <plugins>
@@ -603,7 +397,6 @@
             <properties>
                 <!-- add perf tests back in -->
                 <java.unit.test.exclude.groups>nothing</java.unit.test.exclude.groups>
-                <clojure.test.set>*.*</clojure.test.set>
                 <skipITs>false</skipITs>
             </properties>
         </profile>
@@ -613,15 +406,11 @@
                 <!-- add perf tests back in -->
                 <java.unit.test.exclude.groups>nothing</java.unit.test.exclude.groups>
             </properties>
-        </profile> 
+        </profile>
         <profile>
             <id>integration-tests-only</id>
             <properties>
-                <!--Java-->
                 <skipITs>false</skipITs>
-                <!--Clojure-->
-                <clojure.test.set>integration.*</clojure.test.set>
-                <clojure.test.declared.namespace.only>true</clojure.test.declared.namespace.only>
             </properties>
             <build>
                 <pluginManagement>
@@ -638,40 +427,46 @@
             </build>
         </profile>
         <profile>
+            <id>no-tests</id>
+            <properties>
+                <skipITs>true</skipITs>
+            </properties>
+
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <!-- Unit tests -->
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-surefire-plugin</artifactId>
+                            <configuration>
+                                <skipTests>true</skipTests>
+                            </configuration>
+                        </plugin>
+
+                        <!-- Integration tests -->
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-failsafe-plugin</artifactId>
+                            <configuration>
+                                <skipITs>true</skipITs>
+                            </configuration>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
+        </profile>
+        <profile>
             <id>externals</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
             <modules>
-                <module>external/storm-autocreds</module>
-                <module>external/storm-hdfs</module>
-                <module>external/storm-hdfs-blobstore</module>
-                <module>external/storm-hdfs-oci</module>
-                <module>external/storm-hbase</module>
-                <module>external/storm-hive</module>
-                <module>external/storm-jdbc</module>
-                <module>external/storm-redis</module>
-                <module>external/storm-eventhubs</module>
-                <module>external/storm-elasticsearch</module>
-                <module>external/storm-solr</module>
-                <module>external/storm-metrics</module>
-                <module>external/storm-cassandra</module>
-                <module>external/storm-mqtt</module>
-                <module>external/storm-mongodb</module>
-                <module>external/storm-kafka-client</module>
-                <module>external/storm-kafka-migration</module>
-                <module>external/storm-opentsdb</module>
-                <module>external/storm-kafka-monitor</module>
-                <module>external/storm-kinesis</module>
-                <module>external/storm-jms</module>
-                <module>external/storm-pmml</module>
-                <module>external/storm-rocketmq</module>
-                <module>external/storm-blobstore-migration</module>
+                <module>external</module>
                 <module>integration-test</module>
 
                 <!-- The following modules have dependencies on external modules. -->
                 <module>flux</module>
-                <module>sql</module>
             </modules>
         </profile>
         <profile>
@@ -680,34 +475,10 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <modules>
-                <module>examples/storm-starter</module>
-                <module>examples/storm-loadgen</module>
-                <module>examples/storm-mongodb-examples</module>
-                <module>examples/storm-redis-examples</module>
-                <module>examples/storm-opentsdb-examples</module>
-                <module>examples/storm-solr-examples</module>
-                <module>examples/storm-kafka-client-examples</module>
-                <module>examples/storm-jdbc-examples</module>
-                <module>examples/storm-hdfs-examples</module>
-                <module>examples/storm-hbase-examples</module>
-                <module>examples/storm-hive-examples</module>
-                <module>examples/storm-elasticsearch-examples</module>
-                <module>examples/storm-mqtt-examples</module>
-                <module>examples/storm-pmml-examples</module>
-                <module>examples/storm-jms-examples</module>
-                <module>examples/storm-rocketmq-examples</module>
-                <module>examples/storm-perf</module>
+                <module>examples</module>
             </modules>
         </profile>
     </profiles>
-
-    <distributionManagement>
-        <site>
-            <id>storm.maven.website</id>
-            <name>Storm Website</name>
-            <url>file:///tmp/site</url>
-        </site>
-    </distributionManagement>
 
     <dependencyManagement>
         <dependencies>
@@ -739,24 +510,19 @@
                 <version>${jaxb-version}</version>
             </dependency>
             <dependency>
-                <groupId>javax.activation</groupId>
-                <artifactId>activation</artifactId>
-                <version>${activation-version}</version>
-            </dependency>
-            <dependency>
                 <groupId>org.hdrhistogram</groupId>
                 <artifactId>HdrHistogram</artifactId>
                 <version>${hdrhistogram.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.clojure</groupId>
-                <artifactId>clojure</artifactId>
-                <version>${clojure.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>com.esotericsoftware</groupId>
                 <artifactId>kryo</artifactId>
                 <version>${kryo.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.objenesis</groupId>
+                <artifactId>objenesis</artifactId>
+                <version>${objensis.version}</version>
             </dependency>
             <dependency>
                 <groupId>commons-cli</groupId>
@@ -774,20 +540,26 @@
                 <version>${commons-compress.version}</version>
             </dependency>
             <dependency>
+                <groupId>com.github.luben</groupId>
+                <artifactId>zstd-jni</artifactId>
+                <version>${zstd-jni.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-exec</artifactId>
                 <version>${commons-exec.version}</version>
             </dependency>
             <dependency>
-                <groupId>commons-collections</groupId>
-                <artifactId>commons-collections</artifactId>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-collections4</artifactId>
                 <version>${commons-collections.version}</version>
             </dependency>
             <dependency>
-                <groupId>commons-lang</groupId>
-                <artifactId>commons-lang</artifactId>
-                <version>${commons-lang.version}</version>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-text</artifactId>
+                <version>${commons-text.version}</version>
             </dependency>
+
             <dependency>
                 <groupId>jline</groupId>
                 <artifactId>jline</artifactId>
@@ -828,6 +600,18 @@
                         <groupId>log4j</groupId>
                         <artifactId>log4j</artifactId>
                     </exclusion>
+                    <exclusion>
+                        <groupId>ch.qos.reload4j</groupId>
+                        <artifactId>reload4j</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>ch.qos.logback</groupId>
+                        <artifactId>logback-classic</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>ch.qos.logback</groupId>
+                        <artifactId>logback-core</artifactId>
+                    </exclusion>
                 </exclusions>
             </dependency>
             <dependency>
@@ -836,9 +620,19 @@
                 <version>${zookeeper.version}</version>
             </dependency>
             <dependency>
-                <groupId>javax.servlet</groupId>
-                <artifactId>javax.servlet-api</artifactId>
-                <version>${servlet.version}</version>
+                <groupId>org.xerial.snappy</groupId>
+                <artifactId>snappy-java</artifactId>
+                <version>${snappy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.servlet</groupId>
+                <artifactId>jakarta.servlet-api</artifactId>
+                <version>${jakarta.servlet.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.ws.rs</groupId>
+                <artifactId>jakarta.ws.rs-api</artifactId>
+                <version>${jakarta-jaxws-version}</version>
             </dependency>
             <dependency>
                 <groupId>org.slf4j</groupId>
@@ -846,16 +640,21 @@
                 <version>${slf4j.version}</version>
             </dependency>
             <dependency>
-                <groupId>joda-time</groupId>
-                <artifactId>joda-time</artifactId>
-                <version>${joda-time.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>com.fasterxml.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
                 <version>${jackson.version}</version>
                 <scope>import</scope>
                 <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>commons-logging</groupId>
+                <artifactId>commons-logging</artifactId>
+                <version>${commons-logging.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
             </dependency>
             <dependency>
                 <groupId>commons-fileupload</groupId>
@@ -889,36 +688,21 @@
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>com.googlecode.json-simple</groupId>
-                <artifactId>json-simple</artifactId>
-                <version>${json-simple.version}</version>
+                <groupId>net.minidev</groupId>
+                <artifactId>json-smart</artifactId>
+                <version>${json-smart.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.eclipse.jetty</groupId>
-                <artifactId>jetty-bom</artifactId>
+                <groupId>org.eclipse.jetty.ee10</groupId>
+                <artifactId>jetty-ee10-bom</artifactId>
                 <version>${jetty.version}</version>
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
             <dependency>
-                <groupId>org.clojure</groupId>
-                <artifactId>tools.logging</artifactId>
-                <version>${clojure.tools.logging.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.twitter</groupId>
-                <artifactId>carbonite</artifactId>
-                <version>${carbonite.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>org.yaml</groupId>
                 <artifactId>snakeyaml</artifactId>
                 <version>${snakeyaml.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.httpcomponents</groupId>
-                <artifactId>httpclient</artifactId>
-                <version>${httpclient.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.jctools</groupId>
@@ -935,6 +719,15 @@
                 <artifactId>guava</artifactId>
                 <version>${guava.version}</version>
             </dependency>
+            <!-- Not declared by any module: managed so every module resolves the same jspecify
+                 whether it arrives via Guava or, at a nearer depth, via JUnit. The binary
+                 distribution's dedup-libs check requires the daemon and worker classpaths to
+                 agree on every shared jar. -->
+            <dependency>
+                <groupId>org.jspecify</groupId>
+                <artifactId>jspecify</artifactId>
+                <version>${jspecify.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.google.auto.service</groupId>
                 <artifactId>auto-service</artifactId>
@@ -950,13 +743,23 @@
             </dependency>
             <dependency>
                 <groupId>org.slf4j</groupId>
-                <artifactId>slf4j-log4j12</artifactId>
+                <artifactId>log4j-over-slf4j</artifactId>
                 <version>${slf4j.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.slf4j</groupId>
-                <artifactId>log4j-over-slf4j</artifactId>
+                <artifactId>jcl-over-slf4j</artifactId>
                 <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>jul-to-slf4j</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.zaxxer</groupId>
+                <artifactId>HikariCP</artifactId>
+                <version>${hikari.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
@@ -978,6 +781,46 @@
             <dependency>
                 <groupId>io.dropwizard.metrics</groupId>
                 <artifactId>metrics-jvm</artifactId>
+                <version>${metrics.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.dropwizard.metrics</groupId>
+                <artifactId>metrics-jmx</artifactId>
+                <version>${metrics.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.dropwizard.metrics</groupId>
+                <artifactId>metrics-annotation</artifactId>
+                <version>${metrics.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.dropwizard.metrics</groupId>
+                <artifactId>metrics-json</artifactId>
+                <version>${metrics.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.dropwizard.metrics</groupId>
+                <artifactId>metrics-healthchecks</artifactId>
+                <version>${metrics.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.dropwizard.metrics</groupId>
+                <artifactId>metrics-jersey3</artifactId>
+                <version>${metrics.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.dropwizard.metrics</groupId>
+                <artifactId>metrics-jetty12</artifactId>
+                <version>${metrics.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.dropwizard.metrics</groupId>
+                <artifactId>metrics-logback</artifactId>
+                <version>${metrics.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.dropwizard.metrics</groupId>
+                <artifactId>metrics-jakarta-servlets</artifactId>
                 <version>${metrics.version}</version>
             </dependency>
             <dependency>
@@ -1019,11 +862,6 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>org.apache.calcite</groupId>
-                <artifactId>calcite-core</artifactId>
-                <version>${calcite.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>org.apache.kafka</groupId>
                 <artifactId>kafka-clients</artifactId>
                 <version>${storm.kafka.client.version}</version>
@@ -1047,7 +885,7 @@
             <dependency>
                 <groupId>org.rocksdb</groupId>
                 <artifactId>rocksdbjni</artifactId>
-                <version>${rocksdb-version}</version>
+                <version>${rocksdb-jni-version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.activemq</groupId>
@@ -1066,90 +904,149 @@
             </dependency>
             <dependency>
                 <groupId>org.apache.activemq</groupId>
-                <artifactId>activemq-broker</artifactId>
-                <version>${activemq.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.activemq</groupId>
-                <artifactId>activemq-mqtt</artifactId>
-                <version>${activemq.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.activemq</groupId>
-                <artifactId>activemq-kahadb-store</artifactId>
-                <version>${activemq.version}</version>
-           </dependency>
-           <dependency>
-                <groupId>org.apache.activemq</groupId>
                 <artifactId>activemq-all</artifactId>
                 <version>${activemq.version}</version>
                 <exclusions>
-                   <exclusion>
-                       <groupId>org.slf4j</groupId>
-                       <artifactId>slf4j-api</artifactId>
-                   </exclusion>
-                   <exclusion>
-                       <groupId>log4j</groupId>
-                       <artifactId>log4j</artifactId>
-                   </exclusion>
+                    <exclusion>
+                        <groupId>org.slf4j</groupId>
+                        <artifactId>slf4j-api</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>log4j</groupId>
+                        <artifactId>log4j</artifactId>
+                    </exclusion>
                 </exclusions>
-           </dependency>
-           <!-- Hadoop dependencies. Specified here so HDFS/HBase don't import older versions of these jars in their projects-->
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-auth</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-hdfs</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-common</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-annotations</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-mapreduce-client-core</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-yarn-common</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-yarn-server-resourcemanager</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-yarn-server-applicationhistoryservice</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-yarn-server-web-proxy</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-yarn-registry</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
-           <dependency>
-               <groupId>org.apache.hadoop</groupId>
-               <artifactId>hadoop-archives</artifactId>
-               <version>${hadoop.version}</version>
-           </dependency>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <!-- Iceberg dependencies. Versions are managed here so a project-wide dependency bump
+                 sees the pin; storm-iceberg declares the artifacts without versions. The catalog
+                 implementations (iceberg-aws, -gcp, -hive, -nessie, ...) are deliberately absent:
+                 they are supplied by the topology, not pulled in transitively. -->
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-api</artifactId>
+                <version>${iceberg.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-core</artifactId>
+                <version>${iceberg.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-data</artifactId>
+                <version>${iceberg.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-parquet</artifactId>
+                <version>${iceberg.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-orc</artifactId>
+                <version>${iceberg.version}</version>
+            </dependency>
+            <!-- Hadoop dependencies. Specified here so HDFS/HBase don't import older versions of these jars in their projects-->
+            <dependency>
+                <groupId>org.apache.hadoop</groupId>
+                <artifactId>hadoop-auth</artifactId>
+                <version>${hadoop.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>ch.qos.reload4j</groupId>
+                        <artifactId>reload4j</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.slf4j</groupId>
+                        <artifactId>slf4j-reload4j</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.hadoop</groupId>
+                <artifactId>hadoop-common</artifactId>
+                <version>${hadoop.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>ch.qos.reload4j</groupId>
+                        <artifactId>reload4j</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.slf4j</groupId>
+                        <artifactId>slf4j-reload4j</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.hadoop</groupId>
+                <artifactId>hadoop-annotations</artifactId>
+                <version>${hadoop.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpclient</artifactId>
+                <version>${httpclient.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpcore</artifactId>
+                <version>${httpclient.core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.avro</groupId>
+                <artifactId>avro</artifactId>
+                <version>1.12.2</version>
+            </dependency>
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy</artifactId>
+                <version>${byte-buddy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy-agent</artifactId>
+                <version>${byte-buddy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.code.gson</groupId>
+                <artifactId>gson</artifactId>
+                <version>${gson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm</artifactId>
+                <version>${asm.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.errorprone</groupId>
+                <artifactId>error_prone_annotations</artifactId>
+                <version>${error_prone_annotations.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.woodstox</groupId>
+                <artifactId>woodstox-core</artifactId>
+                <version>7.3.0</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-collections</groupId>
+                <artifactId>commons-collections</artifactId>
+                <version>3.2.2</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-configuration2</artifactId>
+                <version>2.15.1</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -1181,6 +1078,15 @@
             <plugins>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.16.0</version>
+                    <configuration>
+                        <generatedSourcesDirectory>${project.build.directory}/generated-sources
+                        </generatedSourcesDirectory>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${surefire.version}</version>
                     <configuration>
@@ -1189,7 +1095,7 @@
                         <argLine>-Xmx3g -XX:+HeapDumpOnOutOfMemoryError</argLine>
                         <trimStackTrace>false</trimStackTrace>
                         <forkCount>1.0C</forkCount>
-                        <reuseForks>true</reuseForks>
+                        <reuseForks>false</reuseForks>
                         <systemPropertyVariables>
                             <storm.home>${project.basedir}/target/testhome</storm.home>
                         </systemPropertyVariables>
@@ -1217,10 +1123,147 @@
                     </executions>
                 </plugin>
                 <plugin>
+                    <!--
+                    OpenRewrite stages of the checkstyle auto-fix (see storm-checkstyle/README.md). Not bound to
+                    any phase: run on demand. The recipes and the style mirroring storm_checkstyle.xml are in
+                    rewrite.yml at the repo root. Thrift-generated code and the Groovy scripts of
+                    storm-checkstyle are not checked by Checkstyle, so they are left alone.
+                    -->
+                    <groupId>org.openrewrite.maven</groupId>
+                    <artifactId>rewrite-maven-plugin</artifactId>
+                    <version>${rewrite-maven-plugin.version}</version>
+                    <configuration>
+                        <configLocation>${maven.multiModuleProjectDirectory}/rewrite.yml</configLocation>
+                        <activeStyles>
+                            <style>org.apache.storm.checkstyle.Style</style>
+                        </activeStyles>
+                        <exclusions>
+                            <exclusion>**/generated/**</exclusion>
+                            <exclusion>**/resources/storm/*.groovy</exclusion>
+                        </exclusions>
+                        <!-- Styles derived from the ruleset conflict with it (RightCurly 'alone' would push
+                        catch/else onto their own line); the explicit style in rewrite.yml is used instead. -->
+                        <checkstyleDetectionEnabled>false</checkstyleDetectionEnabled>
+                        <exportDatatables>false</exportDatatables>
+                    </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.openrewrite.recipe</groupId>
+                            <artifactId>rewrite-static-analysis</artifactId>
+                            <version>${rewrite-static-analysis.version}</version>
+                        </dependency>
+                    </dependencies>
+                    <executions>
+                        <execution>
+                            <!-- first pass, before checkstyle-autofix.groovy -->
+                            <id>checkstyle-autofix-openrewrite</id>
+                            <phase>none</phase>
+                            <goals>
+                                <goal>run</goal>
+                            </goals>
+                            <configuration>
+                                <activeRecipes>
+                                    <recipe>org.apache.storm.checkstyle.AutoFix</recipe>
+                                </activeRecipes>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <!--
+                    Groovy stages of the checkstyle auto-fix and license header normalization (see
+                    storm-checkstyle/README.md). Not bound to any phase: run on demand. gmavenplus interprets
+                    the scripts directly, so they need no prior `compile` phase.
+                    -->
+                    <groupId>org.codehaus.gmavenplus</groupId>
+                    <artifactId>gmavenplus-plugin</artifactId>
+                    <version>${gmavenplus.version}</version>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.apache.groovy</groupId>
+                            <artifactId>groovy</artifactId>
+                            <version>${groovy.version}</version>
+                        </dependency>
+                        <dependency>
+                            <!-- XmlSlurper, used by checkstyle-autofix.groovy to parse the
+                            checkstyle ruleset itself - split out of Groovy core since Groovy 4. -->
+                            <groupId>org.apache.groovy</groupId>
+                            <artifactId>groovy-xml</artifactId>
+                            <version>${groovy.version}</version>
+                        </dependency>
+                        <dependency>
+                            <!-- checkstyle-autofix.groovy runs Checkstyle itself to find what to fix, so it
+                            must be the same version the checkstyle check uses. -->
+                            <groupId>com.puppycrawl.tools</groupId>
+                            <artifactId>checkstyle</artifactId>
+                            <version>${checkstyle.version}</version>
+                            <exclusions>
+                                <!-- only needed for Checkstyle's site/XDoc output, not to run the checker -->
+                                <exclusion>
+                                    <groupId>org.apache.maven.doxia</groupId>
+                                    <artifactId>*</artifactId>
+                                </exclusion>
+                            </exclusions>
+                        </dependency>
+                        <dependency>
+                            <!-- needed at run time by Checkstyle (commons-beanutils) -->
+                            <groupId>commons-logging</groupId>
+                            <artifactId>commons-logging</artifactId>
+                            <version>${commons-logging.version}</version>
+                        </dependency>
+                    </dependencies>
+                    <executions>
+                        <execution>
+                            <id>checkstyle-autofix</id>
+                            <phase>none</phase>
+                            <goals>
+                                <goal>execute</goal>
+                            </goals>
+                            <configuration>
+                                <scripts>
+                                    <script>file:///${maven.multiModuleProjectDirectory}/storm-checkstyle/src/main/resources/storm/checkstyle-autofix.groovy</script>
+                                </scripts>
+                            </configuration>
+                        </execution>
+                        <execution>
+                            <!-- third pass, indentation only, after checkstyle-autofix -->
+                            <id>checkstyle-autofix-indentation</id>
+                            <phase>none</phase>
+                            <goals>
+                                <goal>execute</goal>
+                            </goals>
+                            <configuration>
+                                <scripts>
+                                    <script>file:///${maven.multiModuleProjectDirectory}/storm-checkstyle/src/main/resources/storm/checkstyle-autofix.groovy</script>
+                                </scripts>
+                                <properties>
+                                    <property>
+                                        <name>autofixChecks</name>
+                                        <value>Indentation,CommentsIndentation</value>
+                                    </property>
+                                </properties>
+                            </configuration>
+                        </execution>
+                        <execution>
+                            <!-- add -Dlicense.check=true to only report -->
+                            <id>normalize-license-headers</id>
+                            <phase>none</phase>
+                            <goals>
+                                <goal>execute</goal>
+                            </goals>
+                            <configuration>
+                                <scripts>
+                                    <script>file:///${maven.multiModuleProjectDirectory}/storm-checkstyle/src/main/resources/storm/normalize-license-headers.groovy</script>
+                                </scripts>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
                     <!--To support checkstyle goals. For example: "mvn checkstyle:checkstyle"-->
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-checkstyle-plugin</artifactId>
-                    <version>3.0.0</version>
+                    <version>3.6.0</version>
                     <dependencies>
                         <dependency>
                             <groupId>org.apache.storm</groupId>
@@ -1230,9 +1273,7 @@
                         <dependency>
                             <groupId>com.puppycrawl.tools</groupId>
                             <artifactId>checkstyle</artifactId>
-                            <!-- If you change this, you should also update the storm_checkstyle.xml file to be
-                            based on the google_checks.xml from the version of checkstyle you are choosing. -->
-                            <version>8.2</version>
+                            <version>${checkstyle.version}</version>
                         </dependency>
                     </dependencies>
                     <executions>
@@ -1241,12 +1282,13 @@
                             <phase>validate</phase>
                             <configuration>
                                 <configLocation>storm/storm_checkstyle.xml</configLocation>
+                                <propertyExpansion>org.checkstyle.google.severity=error</propertyExpansion>
                                 <encoding>UTF-8</encoding>
                                 <failOnViolation>true</failOnViolation>
                                 <logViolationsToConsole>true</logViolationsToConsole>
                                 <consoleOutput>true</consoleOutput>
                                 <outputFile>target/checkstyle-violation.xml</outputFile>
-                                <violationSeverity>warning</violationSeverity>
+                                <violationSeverity>error</violationSeverity>
                             </configuration>
                             <goals>
                                 <goal>check</goal>
@@ -1257,9 +1299,9 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-pmd-plugin</artifactId>
-                    <version>3.16.0</version>
+                    <version>3.28.0</version>
                     <configuration>
-                        <targetJdk>1.8</targetJdk>
+                        <targetJdk>${maven.compiler.target}</targetJdk>
                         <rulesets>
                             <ruleset>storm/pmd-ruleset.xml</ruleset>
                         </rulesets>
@@ -1288,7 +1330,7 @@
                 </plugin>
                 <plugin>
                     <artifactId>maven-clean-plugin</artifactId>
-                    <version>2.5</version>
+                    <version>3.5.0</version>
                     <executions>
                         <execution>
                             <id>cleanup</id>
@@ -1308,25 +1350,25 @@
                     </executions>
                 </plugin>
                 <plugin>
-                    <groupId>com.theoryinpractise</groupId>
-                    <artifactId>clojure-maven-plugin</artifactId>
-                    <version>1.8.4</version>
-                    <extensions>true</extensions>
-                </plugin>
-                <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>exec-maven-plugin</artifactId>
-                    <version>1.6.0</version>
+                    <version>3.6.4</version>
+                </plugin>
+                <plugin>
+                    <groupId>io.github.git-commit-id</groupId>
+                    <artifactId>git-commit-id-maven-plugin</artifactId>
+                    <version>10.0.1</version>
                 </plugin>
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>license-maven-plugin</artifactId>
-                    <version>2.0.0</version>
+                    <version>2.7.1</version>
                     <configuration>
                         <useMissingFile>true</useMissingFile>
                         <failOnMissing>true</failOnMissing>
                         <includeTransitiveDependencies>true</includeTransitiveDependencies>
-                        <fileTemplate>/org/codehaus/mojo/license/third-party-file-groupByMultiLicense.ftl</fileTemplate>
+                        <fileTemplate>/org/codehaus/mojo/license/third-party-file-groupByMultiLicense.ftl
+                        </fileTemplate>
                         <excludedScopes>system,test</excludedScopes>
                         <excludedGroups>${project.groupId}</excludedGroups>
                         <licenseMerges>
@@ -1338,6 +1380,8 @@
                                 Apache License version 2.0 |
                                 Apache 2 |
                                 Apache 2.0 |
+                                Apache-2.0 |
+                                Apache 2.0 License |
                                 Apache License, 2.0 |
                                 Apache License 2 |
                                 Apache License 2.0 |
@@ -1349,19 +1393,25 @@
                                 The Apache Software License, Version 2.0
                             </licenseMerge>
                             <licenseMerge>
-                                Apache License | 
+                                Apache License |
                                 Apache Software Licenses
                             </licenseMerge>
                             <licenseMerge>
                                 BSD License |
                                 BSD license |
+                                BSD licence |
                                 BSD |
                                 The BSD License
+                            </licenseMerge>
+                            <licenseMerge>
+                                BSD 2-Clause License |
+                                BSD 2-Clause license |
                             </licenseMerge>
                             <licenseMerge>
                                 BSD 3-Clause License |
                                 BSD 3-Clause |
                                 BSD 3-clause |
+                                BSD-3-Clause |
                                 The BSD 3-Clause License |
                                 New BSD License |
                                 New BSD license
@@ -1372,13 +1422,13 @@
                                 CDDL 1.0
                             </licenseMerge>
                             <licenseMerge>
-                                Common Development and Distribution License (CDDL) v1.1 | 
+                                Common Development and Distribution License (CDDL) v1.1 |
                                 COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL) Version 1.1 |
                                 CDDL 1.1 |
                                 Common Development and Distribution License (CDDL), Version 1.1
                             </licenseMerge>
                             <licenseMerge>
-                                Common Development and Distribution License | 
+                                Common Development and Distribution License |
                                 <!-- Multilicense, choosing CDDL -->
                                 CDDL+GPL |
                                 CDDL+GPL License |
@@ -1431,10 +1481,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -1445,22 +1491,8 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>com.theoryinpractise</groupId>
-                <artifactId>clojure-maven-plugin</artifactId>
-                <extensions>true</extensions>
-            </plugin>
-            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <configuration>
-                    <doclet>ch.raffael.doclets.pegdown.PegdownDoclet</doclet>
-                    <docletArtifact>
-                        <groupId>ch.raffael.pegdown-doclet</groupId>
-                        <artifactId>pegdown-doclet</artifactId>
-                        <version>1.1</version>
-                    </docletArtifact>
-                    <useStandardDocletOptions>true</useStandardDocletOptions>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -1482,7 +1514,7 @@
                                         <exclude>jdk.tools:jdk.tools:*</exclude>
                                     </excludes>
                                 </bannedDependencies>
-                            </rules>    
+                            </rules>
                         </configuration>
                     </execution>
                 </executions>
@@ -1493,7 +1525,8 @@
                 <inherited>false</inherited>
                 <configuration>
                     <missingFile>${project.basedir}/THIRD-PARTY.properties</missingFile>
-                    <aggregateMissingLicensesFile>${project.basedir}/THIRD-PARTY.properties</aggregateMissingLicensesFile>
+                    <aggregateMissingLicensesFile>${project.basedir}/THIRD-PARTY.properties
+                    </aggregateMissingLicensesFile>
                 </configuration>
                 <executions>
                     <execution>
@@ -1518,17 +1551,17 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>2.10.4</version>
+                <version>3.12.0</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jxr-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>3.6.0</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-report-plugin</artifactId>
-                <version>2.19.1</version>
+                <version>3.6.1</version>
                 <configuration>
                     <reportsDirectories>
                         <file>${project.build.directory}/test-reports</file>
@@ -1539,7 +1572,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>taglist-maven-plugin</artifactId>
-                <version>2.4</version>
+                <version>3.2.3</version>
                 <configuration>
                     <tagListOptions>
                         <tagClasses>

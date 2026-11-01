@@ -128,9 +128,11 @@ UI,DRPC and LOGVIEWER allows users to configure ssl .
 
 ### UI
 
+These configurations enable HTTPS for the Storm UI, allowing secure communication between users and the cluster.
+
 For UI users needs to set following config in storm.yaml. Generating keystores with proper keys and certs should be taken care by the user before this step.
 
-1. ui.https.port 
+1. ui.https.port (Port for HTTPS UI access)
 2. ui.https.keystore.type (example "jks")
 3. ui.https.keystore.path (example "/etc/ssl/storm_keystore.jks")
 4. ui.https.keystore.password (keystore password)
@@ -187,8 +189,151 @@ If users want to setup 2-way auth
 9. logviewer.https.want.client.auth (If this set to true server requests for client certificate authentication, but keeps the connection if no authentication provided)
 10. logviewer.https.need.client.auth (If this set to true server requires client to provide authentication)
 
+## Mutual TLS (mTLS) Support
+
+**Available since Storm 2.7.0 (STORM-4070)**
+
+Storm now supports mutual TLS (mTLS) for internal Thrift RPC communication among Nimbus, Supervisors, and workers. Unlike one-way TLS, mTLS requires both parties to present and verify each other's certificates. This ensures full two-way certificate authentication and encryption.
+
+### Overview of TLS Configuration
+
+Storm provides TLS support for securing internal communication between Nimbus, Supervisors, and workers. This is achieved using existing configuration properties for Thrift-based RPC communication and Netty-based messaging.
+
+The TLS setup requires configuring keystore and truststore paths along with enabling TLS flags for each component. Nimbus and Supervisors use Thrift TLS settings, while workers use Netty TLS settings.
+
+The following sections provide example configurations for each component.
+
+### Example TLS Configuration
+
+### 1. Nimbus Settings
+
+```yaml
+# Thrift TLS Listener
+nimbus.thrift.tls.port: 6067
+nimbus.thrift.access.log.enabled: true
+nimbus.thrift.tls.server.only: true
+
+# Server-side certificates & truststore
+nimbus.thrift.tls.server.keystore.path: /etc/ssl/server.keystore.jks
+nimbus.thrift.tls.server.keystore.password: password
+nimbus.thrift.tls.server.truststore.path: /etc/ssl//server.truststore.jks
+nimbus.thrift.tls.server.truststore.password: password
+
+# Client-side certificates & transport plugin
+nimbus.thrift.client.use.tls: true
+nimbus.thrift.tls.client.keystore.path: /etc/ssl/client.keystore.jks
+nimbus.thrift.tls.client.keystore.password: password
+nimbus.thrift.tls.client.truststore.path: /etc/ssl/client.truststore.jks
+nimbus.thrift.tls.client.truststore.password: password
+nimbus.thrift.tls.transport: org.apache.storm.security.auth.tls.TlsTransportPlugin
+```
+### 2. Supervisor Settings
+
+```yaml
+# TLS transport plugin & client enable
+supervisor.thrift.transport: org.apache.storm.security.auth.tls.TlsTransportPlugin
+supervisor.thrift.client.use.tls: true
+
+# Supervisor as Thrift TLS server
+supervisor.thrift.tls.server.keystore.path: /etc/ssl/server.keystore.jks
+supervisor.thrift.tls.server.keystore.password: password
+supervisor.thrift.tls.server.truststore.path: /etc/ssl/server.truststore.jks
+supervisor.thrift.tls.server.truststore.password: password
+
+# Supervisor client settins
+supervisor.thrift.tls.client.keystore.path: /etc/ssl/client.keystore.jks
+supervisor.thrift.tls.client.keystore.password: password
+supervisor.thrift.tls.client.truststore.path: /etc/ssl/client.truststore.jks
+supervisor.thrift.tls.client.truststore.password: password
+```
+
+### 3. Worker Settings
+
+```yaml
+# Storm Netty messaging TLS (worker ↔ worker)
+storm.messaging.netty.tls.enable: true
+storm.messaging.netty.tls.require.open.ssl: true
+
+# Inbound (server-side) credentials
+storm.messaging.netty.tls.keystore.path: /etc/ssl/server.keystore.jks
+storm.messaging.netty.tls.keystore.password: password
+storm.messaging.netty.tls.truststore.path: /etc/ssl/server.truststore.jks
+storm.messaging.netty.tls.truststore.password: password
+
+# Outbound (client-side) credentials
+storm.messaging.netty.tls.client.keystore.path: /etc/ssl/client.keystore.jks
+storm.messaging.netty.tls.client.keystore.password: password
+storm.messaging.netty.tls.client.truststore.path: /etc/ssl/client.truststore.jks
+storm.messaging.netty.tls.client.truststore.password: password
+```
+
+### 4. Setting Descriptions
+
+| Setting                                           | Description                                                                                  |
+|---------------------------------------------------|----------------------------------------------------------------------------------------------|
+| `nimbus.thrift.tls.port`                         | Port on which Nimbus listens for TLS-encrypted Thrift connections (e.g., 6067)               |
+| `nimbus.thrift.tls.server.only`                   | Nimbus accepts only secure TLS connections                                                  |
+| `nimbus.thrift.tls.server.keystore.path`          | Path to Nimbus server keystore                                                              |
+| `nimbus.thrift.tls.server.keystore.password`      | Password for the Nimbus server keystore                                                     |
+| `nimbus.thrift.tls.server.truststore.path`        | Path to Nimbus server truststore                                                            |
+| `nimbus.thrift.tls.server.truststore.password`    | Password for the Nimbus truststore                                                          |
+| `nimbus.thrift.client.use.tls`                    | Enable TLS on Nimbus outbound Thrift calls                                                  |
+| `nimbus.thrift.tls.client.keystore.path`          | Path to Nimbus client keystore (for outbound connections)                                    |
+| `nimbus.thrift.tls.client.keystore.password`      | Password for the Nimbus client keystore                                                     |
+| `nimbus.thrift.tls.client.truststore.path`        | Path to Nimbus client truststore                                                            |
+| `nimbus.thrift.tls.client.truststore.password`    | Password for the Nimbus client truststore                                                   |
+| `nimbus.thrift.tls.transport`                     | TLS transport plugin class for Nimbus                                                       |
+| `storm.principal.tolocal`                         | Principal-to-local mapping class (for X.509 auth)                                           |
+| `supervisor.thrift.transport`                     | TLS transport plugin class for Supervisor Thrift                                            |
+| `supervisor.thrift.client.use.tls`                | Enable TLS for Supervisor outbound Thrift calls                                             |
+| `supervisor.thrift.tls.server.keystore.path`      | Path to Supervisor server keystore                                                          |
+| `supervisor.thrift.tls.server.keystore.password`  | Password for the Supervisor server keystore                                                 |
+| `supervisor.thrift.tls.server.truststore.path`    | Path to Supervisor server truststore                                                        |
+| `supervisor.thrift.tls.server.truststore.password`| Password for the Supervisor truststore                                                      |
+| `supervisor.thrift.tls.client.keystore.path`      | Path to Supervisor client keystore                                                          |
+| `supervisor.thrift.tls.client.keystore.password`  | Password for the Supervisor client keystore                                                 |
+| `supervisor.thrift.tls.client.truststore.path`    | Path to Supervisor client truststore                                                        |
+| `supervisor.thrift.tls.client.truststore.password`| Password for the Supervisor client truststore                                               |
+| `storm.messaging.netty.tls.enable`                | Enable TLS for Storm Netty messaging (inter-worker)                                         |
+| `storm.messaging.netty.tls.require.open.ssl`      | Require OpenSSL provider for Netty TLS                                                      |
+| `storm.messaging.netty.tls.keystore.path`         | Path to Netty server keystore                                                               |
+| `storm.messaging.netty.tls.keystore.password`     | Password for the Netty server keystore                                                      |
+| `storm.messaging.netty.tls.truststore.path`       | Path to Netty server truststore                                                             |
+| `storm.messaging.netty.tls.truststore.password`   | Password for the Netty server truststore                                                    |
+| `storm.messaging.netty.tls.client.keystore.path`  | Path to Netty client keystore                                                               |
+| `storm.messaging.netty.tls.client.keystore.password`| Password for the Netty client keystore                                                     |
+| `storm.messaging.netty.tls.client.truststore.path`| Path to Netty client truststore                                                             |
+| `storm.messaging.netty.tls.client.truststore.password`| Password for the Netty client truststore                                                  |
 
 
+## UI Security Hardening
+
+### Reverse Proxy Recommendation
+
+For production deployments, the Storm UI, Logviewer, and DRPC HTTP endpoints should be placed behind a reverse proxy such as Apache httpd, nginx, or a similar gateway. While Storm provides built-in SSL/TLS configuration, a reverse proxy offers significant additional security benefits:
+
+- Proper TLS termination with up-to-date cipher suites and certificate management
+- CSRF token validation or same-origin enforcement on state-mutating requests
+- Security response headers (see below)
+- Rate limiting and request filtering
+- Centralized access logging and monitoring
+
+This is especially important because the Storm UI exposes state-mutating operations (topology kill, activate, deactivate, rebalance) via its REST API.
+
+### CSRF Protection
+
+The Storm UI REST API does not currently include built-in Cross-Site Request Forgery (CSRF) protection. State-mutating endpoints can potentially be triggered by a malicious website if a user has an active authenticated session in the same browser. This is particularly relevant when using browser-based authentication mechanisms such as Kerberos (SPNEGO), as the browser automatically attaches credentials to cross-origin requests.
+
+To mitigate this risk, configure your reverse proxy to enforce CSRF token validation or same-origin checks on POST requests.
+
+### Security Response Headers
+
+The Storm UI does not set security-related HTTP response headers by default. Operators deploying a secured cluster should configure the following headers via their reverse proxy or a custom servlet filter configured through `ui.filter`:
+
+- `X-Frame-Options: DENY` or `SAMEORIGIN` to prevent clickjacking attacks
+- `X-Content-Type-Options: nosniff` to prevent MIME type sniffing
+- `Content-Security-Policy` to restrict resource loading
+- `Strict-Transport-Security` when using HTTPS, to enforce secure connections
 
 ## Authentication (Kerberos)
 
@@ -393,6 +538,14 @@ The Log servers have their own authorization configurations.  These are set thro
 
 When a topology is submitted, the submitting user can specify users in this list as well.  The users and groups specified-in addition to the users in the cluster-wide setting-will be granted access to the submitted topology's worker logs in the logviewers.
 
+### BlobStore ACL Validation
+
+Storm uses a BlobStore to distribute topology code and configuration across the cluster. Access control lists on blobs are not enforced by default (`storm.blobstore.acl.validation.enabled: false`). In a secured multi-tenant cluster this means any authenticated user can read or modify any topology's blobs, regardless of ACL settings. To enforce BlobStore ACLs, set the following:
+
+```yaml
+storm.blobstore.acl.validation.enabled: true
+```
+
 ### Supervisors headless User and group Setup
 
 To ensure isolation of users in multi-tenancy, there is need to run supervisors and headless user and group unique to execution on the supervisor nodes.  To enable this follow below steps.
@@ -450,6 +603,8 @@ to get a nimbus client as some other user and perform any nimbus action(i.e. kil
 Impersonation authorization is disabled by default which means any user can perform impersonation. To ensure only authorized users can perform impersonation you should start nimbus with `nimbus.impersonation.authorizer` set to `org.apache.storm.security.auth.authorizer.ImpersonationAuthorizer`.
 The `ImpersonationAuthorizer` uses `nimbus.impersonation.acl` as the acl to authorize users. Following is a sample nimbus config for supporting impersonation:
 
+**Important:** If you have enabled authentication (e.g. Kerberos) and authorization (e.g. `SimpleACLAuthorizer`) but have *not* configured `nimbus.impersonation.authorizer`, any authenticated user can impersonate any other user by setting the `doAsUser` HTTP header or query parameter. The `DefaultHttpCredentialsPlugin` always processes `doAsUser` requests, and without an impersonation authorizer these requests are silently allowed. When deploying a secured cluster you should always configure `nimbus.impersonation.authorizer` alongside `nimbus.authorizer`.
+
 ```yaml
 nimbus.impersonation.authorizer: org.apache.storm.security.auth.authorizer.ImpersonationAuthorizer
 nimbus.impersonation.acl:
@@ -464,6 +619,9 @@ nimbus.impersonation.acl:
         groups:
             [comma separated list of groups whose users impersonating_user2 is allowed to impersonate]
 ```
+
+The DRPC server applies the same `nimbus.impersonation.authorizer` and `nimbus.impersonation.acl` to requests that impersonate another user (for example through the `doAsUser` HTTP header or query parameter), so the DRPC server should be configured with the same settings (including `storm.group.mapping.service`). A request that sets `doAsUser` without an authenticated user is rejected, whether or not an impersonation authorizer is configured.
+For HTTP requests the host is the address the DRPC server sees the connection come from, so when the DRPC HTTP endpoint is behind a reverse proxy, the hosts listed in `nimbus.impersonation.acl` match the proxy rather than the original client.
 
 To support the oozie use case following config can be supplied:
 ```yaml
@@ -502,6 +660,28 @@ By default storm allows any sized topology to be submitted. But ZK and others ha
 | nimbus.slots.perTopology | The maximum number of slots/workers a topology can use. |
 | nimbus.executors.perTopology | The maximum number of executors/threads a topology can use. |
 
+### Serialization Security
+
+Storm uses Kryo for serializing tuple data between spouts and bolts. By default, Kryo requires all classes to be explicitly registered (`topology.fall.back.on.java.serialization: false`). When this setting is changed to `true`, any unregistered class will be serialized using Java's native `ObjectInputStream`/`ObjectOutputStream`, which is known to be vulnerable to deserialization attacks if untrusted data reaches the serialization path.
+
+**Do not set `topology.fall.back.on.java.serialization` to `true` in production.** While topology submitters already run arbitrary code via their spouts and bolts, enabling the Java serialization fallback broadens the attack surface and may allow malicious data from external sources (e.g. message queues) to trigger unintended code execution during deserialization.
+
+As defense in depth, the fallback bridge can be constrained with `topology.fall.back.on.java.serialization.filter`, a [JEP-290](https://openjdk.org/jeps/290) serial-filter pattern applied whenever the bridge deserializes. The filter covers the fallback bridge of the default kryo factory (`DefaultKryoFactory`) only; a custom `topology.kryo.factory` implementation is outside its reach and must handle filtering itself, and the pre-kryo worker state channel (`DefaultStateSerializer`) is not covered either. An empty or unset value leaves the bridge unfiltered, as before.
+
+When the bridge is used, the configured filter is merged with any JVM-wide `jdk.serialFilter` (e.g. set in `worker.childopts`) rather than replacing it, so enabling this setting can only tighten stream filtering, never loosen an operator-set allow-list.
+
+The pattern below is a starting point for operators who enable the fallback anyway and know which classes their payloads contain. It is not a security boundary, and the deny-list is not exhaustive. Following [JEP-290](https://openjdk.org/jeps/290) guidance, an allow-list of the exact classes a topology actually needs is the preferred design; deny-lists only block known gadget classes.
+
+```yaml
+topology.fall.back.on.java.serialization.filter: "!org.apache.commons.collections.functors.*;!org.apache.commons.collections.comparators.*;!org.apache.commons.collections4.functors.*;!org.apache.commons.collections4.comparators.*;!org.apache.commons.beanutils.*;!org.apache.xalan.xsltc.trax.*;!com.sun.org.apache.xalan.internal.**;!com.sun.rowset.*;!com.sun.org.apache.rowset.internal.*;!com.mchange.v2.c3p0.**;!org.codehaus.groovy.runtime.ConvertedClosure;!org.codehaus.groovy.runtime.MethodClosure;!javax.management.BadAttributeValueExpException;!sun.reflect.annotation.AnnotationInvocationHandler;!com.sun.jndi.**;!java.rmi.**;!clojure.**;!org.apache.commons.fileupload.**;!bsh.**;!org.python.**;!org.jboss.**;maxdepth=64;maxrefs=2097152;maxarray=1048576;maxbytes=10485760"
+```
+
+The size limits need a caveat. `maxbytes` counts stream bytes per object, not per tuple, and it is not exact: the filter sees a primitive array when the array is created, before its contents are read, so one big array can slip past the byte cap. `maxarray`, set well below `maxbytes`, is what bounds that case; `maxdepth` and `maxrefs` bound the depth and reference count of the graph. Workloads that legitimately use large arrays should raise these limits. On buffered input the bridge also refuses a declared value length larger than the bytes left in the frame before allocating it; streaming programmatic use of the deserializer is outside this guard.
+
+An invalid pattern is rejected when the topology is submitted, and otherwise fails worker startup.
+
+For tuple encryption, use TLS-based transport encryption (`storm.messaging.netty.tls.enable`). The legacy `BlowfishTupleSerializer` has been removed because it uses a 64-bit block cipher vulnerable to birthday attacks.
+
 ### Log Cleanup
 The Logviewer daemon now is also responsible for cleaning up old log files for dead topologies.
 
@@ -534,7 +714,7 @@ nimbus.groups:
 
 ### DRPC
  
-Storm provides the Access Control List for the DRPC Authorizer.Users can see [org.apache.storm.security.auth.authorizer.DRPCSimpleACLAuthorizer](javadocs/org/apache/storm/security/auth/authorizer/DRPCSimpleACLAuthorizer.html) for more details.
+Storm provides the Access Control List for the DRPC Authorizer.Users can see [org.apache.storm.security.auth.authorizer.DRPCSimpleACLAuthorizer](https://javadoc.io/doc/org.apache.storm/storm-client/3.0.0/org/apache/storm/security/auth/authorizer/DRPCSimpleACLAuthorizer.html) for more details.
  
 There are several DRPC ACL related configurations.
  
@@ -576,3 +756,14 @@ Also, there are several configurations for topology Zookeeper authentication:
 | storm.zookeeper.topology.auth.payload | A string representing the payload for topology Zookeeper authentication. |
 
 Note: If storm.zookeeper.topology.auth.payload isn't set, Storm will generate a ZooKeeper secret payload for MD5-digest with generateZookeeperDigestSecretPayload() method.
+
+### ZooKeeper SSL Hostname Verification
+
+When enabling ZooKeeper SSL via `storm.zookeeper.ssl.enable`, be aware that hostname verification is disabled by default (`storm.zookeeper.ssl.hostnameVerification: false`). Without hostname verification, a man-in-the-middle attacker with any valid certificate signed by a trusted CA could intercept communication between Storm and ZooKeeper. For production deployments you should enable this:
+
+```yaml
+storm.zookeeper.ssl.enable: true
+storm.zookeeper.ssl.hostnameVerification: true
+```
+
+

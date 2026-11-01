@@ -52,7 +52,6 @@ import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.ServerConfigUtils;
 import org.apache.storm.utils.Time;
 import org.apache.storm.utils.Utils;
-import org.jooq.lambda.Unchecked;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,14 +116,22 @@ public class WorkerLogs {
     }
 
     /**
-     * Return a list of all log files from worker directories in root log directory.
+     * Return a list of all log files from worker directories in root log directory. Symbolic links are left out, both as worker
+     * directories and as files. Only links are left out, the listing is otherwise unchanged.
      */
     public List<Path> getAllLogsForRootDir() throws IOException {
         List<Path> files = new ArrayList<>();
         Set<Path> topoDirFiles = getAllWorkerDirs();
         if (topoDirFiles != null) {
             for (Path portDir : topoDirFiles) {
-                files.addAll(directoryCleaner.getFilesForDir(portDir));
+                if (!LogFilePaths.isWorkerDirWithoutSymbolicLink(logRootDir, portDir)) {
+                    continue;
+                }
+                for (Path file : directoryCleaner.getFilesForDir(portDir)) {
+                    if (!Files.isSymbolicLink(file)) {
+                        files.add(file);
+                    }
+                }
             }
         }
 
@@ -138,7 +145,13 @@ public class WorkerLogs {
         try (Stream<Path> topoDirs = Files.list(logRootDir)) {
             return topoDirs
                 .filter(Files::isDirectory)
-                .flatMap(Unchecked.function(Files::list)) //Worker dirs
+                .flatMap(a -> {
+                    try {
+                        return Files.list(a);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }) //Worker dirs
                 .filter(Files::isDirectory)
                 .collect(Collectors.toCollection(TreeSet::new));
         } catch (IOException e) {
@@ -150,7 +163,7 @@ public class WorkerLogs {
      * Return a sorted set of paths that were written by workers that are now active.
      */
     public SortedSet<Path> getAliveWorkerDirs() throws IOException {
-        Set<String> aliveIds = getAliveIds(Time.currentTimeSecs());
+        Set<String> aliveIds = getAliveIds(Time.currentTimeSecsLong());
         Set<Path> logDirs = getAllWorkerDirs();
         return getLogDirs(logDirs, (wid) -> aliveIds.contains(wid));
     }
@@ -194,14 +207,14 @@ public class WorkerLogs {
      *
      * @param nowSecs current time in seconds
      */
-    public Set<String> getAliveIds(int nowSecs) throws IOException {
+    public Set<String> getAliveIds(long nowSecs) throws IOException {
         return SupervisorUtils.readWorkerHeartbeats(stormConf).entrySet().stream()
                 .filter(entry -> Objects.nonNull(entry.getValue()) && !isTimedOut(nowSecs, entry))
                 .map(Map.Entry::getKey)
                 .collect(toCollection(TreeSet::new));
     }
 
-    private boolean isTimedOut(int nowSecs, Map.Entry<String, LSWorkerHeartbeat> entry) {
+    private boolean isTimedOut(long nowSecs, Map.Entry<String, LSWorkerHeartbeat> entry) {
         LSWorkerHeartbeat hb = entry.getValue();
         int workerLogTimeout = getTopologyTimeout(hb);
         return (nowSecs - hb.get_time_secs()) >= workerLogTimeout;
@@ -240,7 +253,7 @@ public class WorkerLogs {
     public SortedSet<Path> getLogDirs(Set<Path> logDirs, Predicate<String> predicate) {
         // we could also make this static, but not to do it due to mock
         TreeSet<Path> ret = new TreeSet<>();
-        for (Path logDir: logDirs) {
+        for (Path logDir : logDirs) {
             String workerId = "";
             try {
                 Optional<Path> metaFile = getMetadataFileForWorkerLogDir(logDir);

@@ -21,6 +21,16 @@ import org.apache.storm.shade.io.netty.channel.ChannelInboundHandlerAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Inbound handler of the Pacemaker client pipeline.
+ *
+ * @deprecated Pacemaker is deprecated and only kept for backward compatibility; it will be removed
+ *     in a future release.
+ *     Use the default heartbeat path instead: workers heartbeat to their supervisor, which reports
+ *     them to Nimbus over
+ *     Thrift, with the default ZooKeeper-based cluster state store ({@code org.apache.storm.cluster.ZKStateStorageFactory}).
+ */
+@Deprecated(since = "3.1.0", forRemoval = true)
 public class PacemakerClientHandler extends ChannelInboundHandlerAdapter {
     private static final Logger LOG = LoggerFactory.getLogger(PacemakerClientHandler.class);
 
@@ -35,7 +45,7 @@ public class PacemakerClientHandler extends ChannelInboundHandlerAdapter {
         // register the newly established channel
         Channel channel = ctx.channel();
         LOG.info("Connection established from {} to {}",
-                 channel.localAddress(), channel.remoteAddress());
+                channel.localAddress(), channel.remoteAddress());
         client.channelReady(channel);
     }
 

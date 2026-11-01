@@ -28,7 +28,7 @@ the layout and configuration of your topologies.
    in your topology code
  * Support for existing topology code (see below)
  * Define Storm Core API (Spouts/Bolts) using a flexible YAML DSL
- * YAML DSL support for most Storm components (storm-kafka-client, storm-hdfs, storm-hbase, etc.)
+ * YAML DSL support for most Storm components (storm-kafka-client, storm-hdfs, etc.)
  * Convenient support for multi-lang components
  * External property substitution/filtering for easily switching between configurations/environments (similar to Maven-style
    `${variable.name}` substitution)
@@ -44,7 +44,7 @@ The easiest way to use Flux, is to add it as a Maven dependency in you project a
 If you would like to build Flux from source and run the unit/integration tests, you will need the following installed
 on your system:
 
-* Python 2.6.x or later
+* Python 3.0.x or later
 * Node.js 0.10.x or later
 
 #### Building with unit tests enabled:
@@ -574,6 +574,17 @@ component when the topology is deployed.
 Because spout and bolt definitions extend `component` they support constructor arguments, references, and properties as
 well.
 
+In addition to `parallelism`, spout and bolt definitions support the following optional parameters that map directly to
+the underlying Storm `BoltDeclarer`/`SpoutDeclarer`:
+
+| Parameter           | Description                                                                              |
+|---------------------|------------------------------------------------------------------------------------------|
+| `numTasks`          | The number of tasks for the component (`setNumTasks`).                                    |
+| `onHeapMemoryLoad`  | The on-heap memory load, in MB, for resource-aware scheduling (`setMemoryLoad`).         |
+| `offHeapMemoryLoad` | The off-heap memory load, in MB, for resource-aware scheduling (`setMemoryLoad`).        |
+| `cpuLoad`           | The CPU load for resource-aware scheduling (`setCPULoad`).                                |
+| `config`            | A map of configuration parameters applied only to this component (`addConfigurations`).  |
+
 Shell spout example:
 
 ```yaml
@@ -640,7 +651,7 @@ bolts:
     className: "org.apache.storm.flux.wrappers.bolts.FluxShellBolt"
     constructorArgs:
       # command line
-      - ["python", "splitsentence.py"]
+      - ["python3", "splitsentence.py"]
       # output fields
       - ["word"]
     parallelism: 1
@@ -656,6 +667,35 @@ bolts:
     parallelism: 1
     # ...
 ```
+
+### Per-Component Configuration
+In addition to the topology-wide [Topology Config](#topology-config), each spout and bolt can declare its own `config`
+map. These configurations are applied to that component only, via the declarer's `addConfigurations(...)` method,
+following Storm's native support for component-level configuration. This avoids enabling a configuration topology-wide
+when only a single component requires it.
+
+```yaml
+spouts:
+  - id: "sentence-spout"
+    className: "org.apache.storm.flux.wrappers.spouts.FluxShellSpout"
+    parallelism: 1
+    # configuration applied to this spout only
+    config:
+      topology.max.spout.pending: 1000
+
+bolts:
+  - id: "log"
+    className: "org.apache.storm.flux.wrappers.bolts.LogInfoBolt"
+    parallelism: 1
+    # configuration applied to this bolt only
+    config:
+      topology.tuple.compression.enable: true
+```
+
+Known Storm configuration keys are validated when the topology is built, so an invalid value (for example, a
+non-boolean value for `topology.tuple.compression.enable`) fails fast rather than at submission time. Unknown/custom
+keys are not validated and are passed through verbatim; validation runs client-side at build time.
+
 ## Streams and Stream Groupings
 Streams in Flux are represented as a list of connections (Graph edges, data flow, etc.) between the Spouts and Bolts in
 a topology, with an associated Grouping definition.
@@ -787,7 +827,7 @@ bolts:
     className: "org.apache.storm.flux.wrappers.bolts.FluxShellBolt"
     constructorArgs:
       # command line
-      - ["python", "splitsentence.py"]
+      - ["python3", "splitsentence.py"]
       # output fields
       - ["word"]
     parallelism: 1

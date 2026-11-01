@@ -38,6 +38,7 @@ import org.apache.storm.Config;
 import org.apache.storm.generated.GlobalStreamId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -87,7 +88,7 @@ public class TopologyLoadConf {
      * @throws IOException if there is an issue reading the file.
      */
     public static TopologyLoadConf fromConf(File file) throws IOException {
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         Map<String, Object> yamlConf = (Map<String, Object>) yaml.load(new FileReader(file));
         return TopologyLoadConf.fromConf(yamlConf);
     }
@@ -104,7 +105,7 @@ public class TopologyLoadConf {
         }
 
         List<LoadCompConf> spouts = new ArrayList<>();
-        for (Map<String, Object> spoutInfo: (List<Map<String, Object>>) conf.get("spouts")) {
+        for (Map<String, Object> spoutInfo : (List<Map<String, Object>>) conf.get("spouts")) {
             spouts.add(LoadCompConf.fromConf(spoutInfo));
         }
 
@@ -119,7 +120,7 @@ public class TopologyLoadConf {
         List<InputStream> streams = new ArrayList<>();
         List<Map<String, Object>> streamInfos = (List<Map<String, Object>>) conf.get("streams");
         if (streamInfos != null) {
-            for (Map<String, Object> streamInfo: streamInfos) {
+            for (Map<String, Object> streamInfo : streamInfos) {
                 streams.add(InputStream.fromConf(streamInfo));
             }
         }
@@ -133,7 +134,7 @@ public class TopologyLoadConf {
      * @throws IOException if there is an error writing to the file.
      */
     public void writeTo(File file) throws IOException {
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         try (FileWriter writer = new FileWriter(file)) {
             yaml.dump(toConf(), writer);
         }
@@ -144,7 +145,7 @@ public class TopologyLoadConf {
      * @return this as a YAML String.
      */
     public String toYamlString() {
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         StringWriter writer = new StringWriter();
         yaml.dump(toConf(), writer);
         return writer.toString();
@@ -234,7 +235,7 @@ public class TopologyLoadConf {
      * @return the first one that is not null
      */
     static <V> V or(V...rest) {
-        for (V i: rest) {
+        for (V i : rest) {
             if (i != null) {
                 return i;
             }
@@ -330,7 +331,7 @@ public class TopologyLoadConf {
     public TopologyLoadConf anonymize() {
         Map<String, String> remappedComponents = new HashMap<>();
         Map<GlobalStreamId, GlobalStreamId> remappedStreams = new HashMap<>();
-        for (LoadCompConf comp: bolts) {
+        for (LoadCompConf comp : bolts) {
             String newId = getUniqueBoltName();
             remappedComponents.put(comp.id, newId);
             if (comp.streams != null) {
@@ -342,7 +343,7 @@ public class TopologyLoadConf {
             }
         }
 
-        for (LoadCompConf comp: spouts) {
+        for (LoadCompConf comp : spouts) {
             remappedComponents.put(comp.id, getUniqueSpoutName());
             String newId = getUniqueSpoutName();
             remappedComponents.put(comp.id, newId);
@@ -386,7 +387,7 @@ public class TopologyLoadConf {
     private static Map<String, Object> anonymizeTopoConf(Map<String, Object> topoConf) {
         //Only keep important conf keys
         Map<String, Object> ret = new HashMap<>();
-        for (Map.Entry<String, Object> entry: topoConf.entrySet()) {
+        for (Map.Entry<String, Object> entry : topoConf.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
             if (IMPORTANT_CONF_KEYS.contains(key)) {
@@ -404,7 +405,7 @@ public class TopologyLoadConf {
         if (value instanceof String) {
             String sv = (String) value;
             StringBuffer ret = new StringBuffer();
-            for (String part: sv.split("\\s+")) {
+            for (String part : sv.split("\\s+")) {
                 if (part.startsWith("-X")) {
                     ret.append(part).append(" ");
                 }
@@ -412,7 +413,7 @@ public class TopologyLoadConf {
             return ret.toString();
         } else {
             List<String> ret = new ArrayList<>();
-            for (String subValue: (Collection<String>) value) {
+            for (String subValue : (Collection<String>) value) {
                 ret.add((String) cleanupChildOpts(subValue));
             }
             return ret.stream().filter((item) -> item != null && !item.isEmpty()).collect(Collectors.toList());
@@ -425,19 +426,19 @@ public class TopologyLoadConf {
      * @return true if it does else false.
      */
     public boolean looksLikeTrident() {
-        for (LoadCompConf spout: spouts) {
+        for (LoadCompConf spout : spouts) {
             if (spout.id.startsWith("$mastercoord")) {
                 return true;
             }
         }
 
-        for (LoadCompConf bolt: bolts) {
+        for (LoadCompConf bolt : bolts) {
             if (bolt.id.startsWith("$spoutcoord")) {
                 return true;
             }
         }
 
-        for (InputStream in: streams) {
+        for (InputStream in : streams) {
             if (in.id.equals("$batch")) {
                 return true;
             }
@@ -451,7 +452,7 @@ public class TopologyLoadConf {
      */
     public double getAllEmittedAggregate() {
         double ret = getSpoutEmittedAggregate();
-        for (LoadCompConf bolt: bolts) {
+        for (LoadCompConf bolt : bolts) {
             ret += bolt.getAllEmittedAggregate();
         }
         return ret;
@@ -463,7 +464,7 @@ public class TopologyLoadConf {
      */
     public double getSpoutEmittedAggregate() {
         double ret = 0;
-        for (LoadCompConf spout: spouts) {
+        for (LoadCompConf spout : spouts) {
             ret += spout.getAllEmittedAggregate();
         }
         return ret;
@@ -483,7 +484,7 @@ public class TopologyLoadConf {
             for (LoadCompConf comp : all) {
                 if (comp.id.startsWith("spout-")) {
                     if (comp.streams != null) {
-                        for (OutputStream out: comp.streams) {
+                        for (OutputStream out : comp.streams) {
                             if (!out.id.startsWith("$")
                                 && !out.id.startsWith("__")
                                 && out.rate != null) {

@@ -23,8 +23,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Pattern;
-import org.apache.commons.lang.builder.ToStringBuilder;
-import org.apache.commons.lang.builder.ToStringStyle;
+import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -268,7 +268,7 @@ public abstract class CommonKafkaSpoutConfig<K, V> implements Serializable {
     @Override
     public String toString() {
         return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-            .append("kafkaProps", kafkaProps)
+            .append("kafkaProps", kafkaProps.keySet())
             .append("partitionRefreshPeriodMs", partitionRefreshPeriodMs)
             .append("pollTimeoutMs", pollTimeoutMs)
             .append("topicFilter", topicFilter)

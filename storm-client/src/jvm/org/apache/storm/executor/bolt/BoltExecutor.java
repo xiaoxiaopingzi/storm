@@ -21,14 +21,11 @@ import java.util.function.BooleanSupplier;
 import org.apache.storm.Config;
 import org.apache.storm.Constants;
 import org.apache.storm.ICredentialsListener;
-import org.apache.storm.daemon.StormCommon;
 import org.apache.storm.daemon.Task;
 import org.apache.storm.daemon.metrics.BuiltinMetricsUtil;
 import org.apache.storm.daemon.worker.WorkerState;
 import org.apache.storm.executor.Executor;
-import org.apache.storm.generated.NodeInfo;
 import org.apache.storm.hooks.info.BoltExecuteInfo;
-import org.apache.storm.messaging.IConnection;
 import org.apache.storm.metric.api.IMetricsRegistrant;
 import org.apache.storm.policy.IWaitStrategy;
 import org.apache.storm.policy.IWaitStrategy.WaitSituation;
@@ -39,6 +36,7 @@ import org.apache.storm.stats.ClientStatsUtil;
 import org.apache.storm.task.IBolt;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
+import org.apache.storm.tracing.TupleTracer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.TupleImpl;
 import org.apache.storm.utils.ConfigUtils;
@@ -49,7 +47,6 @@ import org.apache.storm.utils.Time;
 import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 
 public class BoltExecutor extends Executor {
 
@@ -62,20 +59,23 @@ public class BoltExecutor extends Executor {
     private final BoltExecutorStats stats;
     private BoltOutputCollectorImpl outputCollector;
 
-    public BoltExecutor(WorkerState workerData, List<Long> executorId, Map<String, String> credentials) {
+    public BoltExecutor(WorkerState workerData, List<Long> executorId, Map<String,
+            String> credentials) {
         super(workerData, executorId, credentials, ClientStatsUtil.BOLT);
         this.executeSampler = ConfigUtils.mkStatsSampler(topoConf);
         this.isSystemBoltExecutor = (executorId == Constants.SYSTEM_EXECUTOR_ID);
         if (isSystemBoltExecutor) {
             this.consumeWaitStrategy = makeSystemBoltWaitStrategy();
         } else {
-            this.consumeWaitStrategy = ReflectionUtils.newInstance((String) topoConf.get(Config.TOPOLOGY_BOLT_WAIT_STRATEGY));
+            this.consumeWaitStrategy = ReflectionUtils.newInstance((String) topoConf
+                    .get(Config.TOPOLOGY_BOLT_WAIT_STRATEGY));
             this.consumeWaitStrategy.prepare(topoConf, WaitSituation.BOLT_WAIT);
         }
-        this.backPressureWaitStrategy = ReflectionUtils.newInstance((String) topoConf.get(Config.TOPOLOGY_BACKPRESSURE_WAIT_STRATEGY));
+        this.backPressureWaitStrategy = ReflectionUtils.newInstance((String) topoConf
+                .get(Config.TOPOLOGY_BACKPRESSURE_WAIT_STRATEGY));
         this.backPressureWaitStrategy.prepare(topoConf, WaitSituation.BACK_PRESSURE_WAIT);
         this.stats = new BoltExecutorStats(ConfigUtils.samplingRate(this.getTopoConf()),
-                                           ObjectReader.getInt(this.getTopoConf().get(Config.NUM_STAT_BUCKETS)));
+                ObjectReader.getInt(this.getTopoConf().get(Config.NUM_STAT_BUCKETS)));
     }
 
     private static IWaitStrategy makeSystemBoltWaitStrategy() {
@@ -95,14 +95,14 @@ public class BoltExecutor extends Executor {
         executorTransfer.initLocalRecvQueues();
         workerReady.await();
         while (!stormActive.get()) {
-            //Topology may be deployed in deactivated mode, wait for activation
+            // Topology may be deployed in deactivated mode, wait for activation
             Utils.sleepNoSimulation(100);
         }
 
         LOG.info("Preparing bolt {}:{}", componentId, getTaskIds());
         for (Task taskData : idToTask) {
             if (taskData == null) {
-                //This happens if the min id is too small
+                // This happens if the min id is too small
                 continue;
             }
             IBolt boltObject = (IBolt) taskData.getTaskObject();
@@ -111,7 +111,8 @@ public class BoltExecutor extends Executor {
                 ((ICredentialsListener) boltObject).setCredentials(credentials);
             }
             if (Constants.SYSTEM_COMPONENT_ID.equals(componentId)) {
-                BuiltinMetricsUtil.registerIconnectionServerMetric(workerData.getReceiver(), topoConf, userContext);
+                BuiltinMetricsUtil.registerIconnectionServerMetric(workerData.getReceiver(),
+                        topoConf, userContext);
 
                 // add any autocredential expiry metrics from the worker
                 if (workerData.getAutoCredentials() != null) {
@@ -124,13 +125,17 @@ public class BoltExecutor extends Executor {
                 }
             }
 
-            this.outputCollector = new BoltOutputCollectorImpl(this, taskData, rand, hasEventLoggers, ackingEnabled, isDebug);
+            this.outputCollector = new BoltOutputCollectorImpl(this, taskData, rand,
+                    hasEventLoggers, ackingEnabled, isDebug);
             boltObject.prepare(topoConf, userContext, new OutputCollector(outputCollector));
         }
         openOrPrepareWasCalled.set(true);
         LOG.info("Prepared bolt {}:{}", componentId, taskIds);
         setupTicks(false);
         setupMetrics();
+        if (upstreamFeedbackEnabled && !Utils.isSystemId(componentId)) {
+            scheduleUpstreamFeedbackTick(upstreamFeedbackFreqSecs);
+        }
     }
 
     @Override
@@ -168,7 +173,8 @@ public class BoltExecutor extends Executor {
                     }
                 } else {
                     if (bpIdleCount == 0) { // check avoids multiple log msgs when spinning in a idle loop
-                        LOG.debug("Experiencing Back Pressure. Entering BackPressure Wait. PendingEmits = {}", pendingEmits.size());
+                        LOG.debug("Experiencing Back Pressure. Entering BackPressure Wait. "
+                                + "PendingEmits = {}", pendingEmits.size());
                     }
                     bpIdleCount = backPressureWaitStrategy.idle(bpIdleCount);
                 }
@@ -198,6 +204,18 @@ public class BoltExecutor extends Executor {
             outputCollector.flush();
         } else if (Constants.METRICS_TICK_STREAM_ID.equals(streamId)) {
             metricsTick(idToTask.get(taskId - idToTaskBase), tuple);
+        } else if (Constants.FEEDBACK_TICK_STREAM_ID.equals(streamId)) {
+            if (this.upstreamFeedbackEnabled) {
+                // periodic trigger: emit this task's feedback snapshot to its upstream tasks
+                sendUpstreamFeedback(idToTask.get(taskId - idToTaskBase));
+            }
+        } else if (Constants.FEEDBACK_STREAM_ID.equals(streamId)) {
+            if (!this.upstreamFeedbackEnabled) {
+                LOG.debug("Upstream feedback skipped.");
+            } else {
+                // update internal metrics
+                this.updateChildEwmaStats(idToTask.get(taskId - idToTaskBase), tuple);
+            }
         } else {
             IBolt boltObject = (IBolt) idToTask.get(taskId - idToTaskBase).getTaskObject();
             boolean isSampled = sampler.getAsBoolean();
@@ -206,13 +224,30 @@ public class BoltExecutor extends Executor {
             if (isSampled) {
                 tuple.setProcessSampleStartTime(now);
             }
-            if (isExecuteSampler) {
-                tuple.setExecuteSampleStartTime(now);
+            Object received = tupleTracer == null ? null : tuple.getTraceContext();
+            TupleTracer.ExecuteScope scope =
+                received == null ? null : tupleTracer.startExecute(taskId, tuple, received);
+            long delta;
+            if (scope == null) {
+                if (isExecuteSampler) {
+                    // leave out a startExecute() call that returned null
+                    tuple.setExecuteSampleStartTime(received == null ? now : Time.currentTimeMillis());
+                }
+                boltObject.execute(tuple);
+                delta = executeDelta(tuple);
+            } else {
+                try (scope) {
+                    // anchored emits and fail() read the context from the tuple, also after execute() returns
+                    tuple.setTraceContext(scope.context());
+                    // the execute latency leaves out opening and closing the scope
+                    if (isExecuteSampler) {
+                        tuple.setExecuteSampleStartTime(Time.currentTimeMillis());
+                    }
+                    boltObject.execute(tuple);
+                    delta = executeDelta(tuple);
+                }
             }
-            boltObject.execute(tuple);
 
-            Long ms = tuple.getExecuteSampleStartTime();
-            long delta = (ms != null) ? Time.deltaMs(ms) : -1;
             if (isDebug) {
                 LOG.info("Execute done TUPLE {} TASK: {} DELTA: {}", tuple, taskId, delta);
             }
@@ -226,8 +261,14 @@ public class BoltExecutor extends Executor {
                 stats.boltExecuteTuple(tuple.getSourceComponent(), tuple.getSourceStreamId(), delta,
                         workerData.getUptime().upTime(), firstTask);
                 Task currentTask = idToTask.get(taskId - idToTaskBase);
-                currentTask.getTaskMetrics().boltExecuteTuple(tuple.getSourceComponent(), tuple.getSourceStreamId(), delta);
+                currentTask.getTaskMetrics().boltExecuteTuple(tuple.getSourceComponent(), tuple
+                        .getSourceStreamId(), delta);
             }
         }
+    }
+
+    private static long executeDelta(TupleImpl tuple) {
+        Long ms = tuple.getExecuteSampleStartTime();
+        return (ms != null) ? Time.deltaMs(ms) : -1;
     }
 }

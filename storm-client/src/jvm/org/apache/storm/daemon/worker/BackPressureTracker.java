@@ -26,8 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.apache.storm.messaging.netty.BackPressureStatus;
 import org.apache.storm.metrics2.StormMetricRegistry;
-import org.apache.storm.shade.org.apache.commons.lang.builder.ToStringBuilder;
-import org.apache.storm.shade.org.apache.commons.lang.builder.ToStringStyle;
+import org.apache.storm.shade.org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.storm.shade.org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.storm.utils.JCQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,10 +44,10 @@ public class BackPressureTracker {
                                StormMetricRegistry metricRegistry, Map<Integer, String> taskToComponent) {
         this.workerId = workerId;
         this.tasks = localTasksToQueues.entrySet().stream()
-            .collect(Collectors.toMap(
-                entry -> entry.getKey(),
-                entry -> new BackpressureState(entry.getValue(), entry.getKey(),
-                        taskToComponent.get(entry.getKey()), metricRegistry)));
+                .collect(Collectors.toMap(
+                        entry -> entry.getKey(),
+                        entry -> new BackpressureState(entry.getValue(), entry.getKey(),
+                                taskToComponent.get(entry.getKey()), metricRegistry)));
     }
 
     public BackpressureState getBackpressureState(Integer taskId) {
@@ -88,7 +88,7 @@ public class BackPressureTracker {
         ArrayList<Integer> nonBpTasks = new ArrayList<>(tasks.size());
 
         for (Entry<Integer, BackpressureState> entry : tasks.entrySet()) {
-            //System bolt is not a part of backpressure.
+            // System bolt is not a part of backpressure.
             if (entry.getKey() >= 0) {
                 boolean backpressure = entry.getValue().backpressure.get();
                 if (backpressure) {
@@ -109,16 +109,15 @@ public class BackPressureTracker {
         state.lastOverflowCount = value;
     }
 
-    
     public static class BackpressureState {
         private final JCQueue queue;
-        //No task is under backpressure initially
+        // No task is under backpressure initially
         private final AtomicBoolean backpressure = new AtomicBoolean(false);
-        //The overflow count last time BP status was sent
+        // The overflow count last time BP status was sent
         private int lastOverflowCount = 0;
 
-
-        BackpressureState(JCQueue queue, Integer taskId, String componentId, StormMetricRegistry metricRegistry) {
+        BackpressureState(JCQueue queue, Integer taskId, String componentId,
+                StormMetricRegistry metricRegistry) {
             this.queue = queue;
 
             // System bolt is not a part of backpressure.
@@ -136,16 +135,17 @@ public class BackPressureTracker {
                         return 0;
                     }
                 };
-                metricRegistry.gauge("__backpressure-last-overflow-count", bpOverflowCount, componentId, taskId);
+                metricRegistry.gauge("__backpressure-last-overflow-count", bpOverflowCount,
+                        componentId, taskId);
             }
         }
 
         @Override
         public String toString() {
             return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append(queue)
-                .append(backpressure)
-                .toString();
+                    .append(queue)
+                    .append(backpressure)
+                    .toString();
         }
     }
 }

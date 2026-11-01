@@ -20,15 +20,18 @@ import org.apache.storm.serialization.KryoValuesSerializer;
 import org.apache.storm.shade.io.netty.channel.Channel;
 import org.apache.storm.shade.io.netty.channel.ChannelInitializer;
 import org.apache.storm.shade.io.netty.channel.ChannelPipeline;
+import org.apache.storm.shade.io.netty.handler.ssl.SslContext;
 
 class StormServerPipelineFactory extends ChannelInitializer<Channel> {
 
     private final Map<String, Object> topoConf;
     private final Server server;
+    private final SslContext sslContext;
 
-    StormServerPipelineFactory(Map<String, Object> topoConf, Server server) {
+    StormServerPipelineFactory(Map<String, Object> topoConf, Server server, SslContext sslContext) {
         this.topoConf = topoConf;
         this.server = server;
+        this.sslContext = sslContext;
     }
 
     @Override
@@ -36,21 +39,29 @@ class StormServerPipelineFactory extends ChannelInitializer<Channel> {
         // Create a default pipeline implementation.
         ChannelPipeline pipeline = ch.pipeline();
 
-        // Decoder
-        pipeline.addLast("decoder", new MessageDecoder(new KryoValuesDeserializer(topoConf)));
-        // Encoders
-        pipeline.addLast("netty-serializable-encoder", NettySerializableMessageEncoder.INSTANCE);
-        pipeline.addLast("backpressure-encoder", new BackPressureStatusEncoder(new KryoValuesSerializer(topoConf)));
+        if (this.sslContext != null) {
+            // Add SSL handler first to encrypt and decrypt everything.
+            pipeline.addLast("ssl", sslContext.newHandler(ch.alloc()));
+        }
 
         boolean isNettyAuth = (Boolean) topoConf
-            .get(Config.STORM_MESSAGING_NETTY_AUTHENTICATION);
+                .get(Config.STORM_MESSAGING_NETTY_AUTHENTICATION);
+
+        // Decoder
+        pipeline.addLast("decoder", new MessageDecoder(new KryoValuesDeserializer(topoConf),
+                isNettyAuth));
+        // Encoders
+        pipeline.addLast("netty-serializable-encoder", NettySerializableMessageEncoder.INSTANCE);
+        pipeline.addLast("backpressure-encoder",
+                new BackPressureStatusEncoder(new KryoValuesSerializer(topoConf)));
+
         if (isNettyAuth) {
             // Authenticate: Removed after authentication completes
             pipeline.addLast("saslServerHandler", new SaslStormServerHandler(
-                server));
+                    server));
             // Authorize
             pipeline.addLast("authorizeServerHandler",
-                new SaslStormServerAuthorizeHandler());
+                    new SaslStormServerAuthorizeHandler());
         }
         // business logic.
         pipeline.addLast("handler", new StormServerHandler(server));

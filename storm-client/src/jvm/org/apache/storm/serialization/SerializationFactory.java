@@ -40,6 +40,7 @@ import org.apache.storm.serialization.types.HashMapSerializer;
 import org.apache.storm.serialization.types.HashSetSerializer;
 import org.apache.storm.transactional.TransactionAttempt;
 import org.apache.storm.trident.tuple.ConsList;
+import org.apache.storm.tuple.DetachedTuple;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.ListDelegate;
 import org.apache.storm.utils.ReflectionUtils;
@@ -49,10 +50,12 @@ import org.slf4j.LoggerFactory;
 
 public class SerializationFactory {
     public static final Logger LOG = LoggerFactory.getLogger(SerializationFactory.class);
-    public static final ServiceLoader<SerializationRegister> loader = ServiceLoader.load(SerializationRegister.class);
+    public static final ServiceLoader<SerializationRegister> loader = ServiceLoader
+            .load(SerializationRegister.class);
 
     public static Kryo getKryo(Map<String, Object> conf) {
-        IKryoFactory kryoFactory = (IKryoFactory) ReflectionUtils.newInstance((String) conf.get(Config.TOPOLOGY_KRYO_FACTORY));
+        IKryoFactory kryoFactory = (IKryoFactory) ReflectionUtils.newInstance((String) conf
+                .get(Config.TOPOLOGY_KRYO_FACTORY));
         Kryo k = kryoFactory.getKryo(conf);
         k.register(byte[].class);
 
@@ -60,7 +63,8 @@ public class SerializationFactory {
         String payloadSerializerName = (String) conf.get(Config.TOPOLOGY_TUPLE_SERIALIZER);
         try {
             Class serializerClass = Class.forName(payloadSerializerName);
-            Serializer serializer = resolveSerializerInstance(k, ListDelegate.class, serializerClass, conf);
+            Serializer serializer = resolveSerializerInstance(k, ListDelegate.class,
+                    serializerClass, conf);
             k.register(ListDelegate.class, serializer);
         } catch (ClassNotFoundException ex) {
             throw new RuntimeException(ex);
@@ -77,6 +81,8 @@ public class SerializationFactory {
         k.register(ConsList.class);
         k.register(BackPressureStatus.class);
         k.register(NodeInfo.class);
+        k.register(DetachedTuple.class);
+        k.register(org.apache.storm.executor.EwmaFeedbackRecord.class);
 
         synchronized (loader) {
             for (SerializationRegister sr : loader) {
@@ -101,10 +107,11 @@ public class SerializationFactory {
                 try {
                     Class klass = Class.forName(klassName);
                     IKryoDecorator decorator = (IKryoDecorator) klass.newInstance();
-                    decorator.decorate(k);
+                    decorator.decorate(k, conf);
                 } catch (ClassNotFoundException e) {
                     if (skipMissing) {
-                        LOG.info("Could not find kryo decorator named " + klassName + ". Skipping registration...");
+                        LOG.info("Could not find kryo decorator named " + klassName
+                                + ". Skipping registration...");
                     } else {
                         throw new RuntimeException(e);
                     }
@@ -125,7 +132,8 @@ public class SerializationFactory {
         register(k, classesToRegister, Collections.emptyMap(), true);
     }
 
-    public static void register(Kryo k, Object kryoRegistrations, Map<String, Object> conf, boolean skipMissing) {
+    public static void register(Kryo k, Object kryoRegistrations, Map<String, Object> conf,
+            boolean skipMissing) {
         Map<String, String> registrations = normalizeKryoRegister(kryoRegistrations);
         for (Map.Entry<String, String> entry : registrations.entrySet()) {
             String serializerClassName = entry.getValue();
@@ -142,7 +150,8 @@ public class SerializationFactory {
                 }
             } catch (ClassNotFoundException e) {
                 if (skipMissing) {
-                    LOG.info("Could not find serialization or class for " + serializerClassName + ". Skipping registration...");
+                    LOG.info("Could not find serialization or class for " + serializerClassName
+                            + ". Skipping registration...");
                 } else {
                     throw new RuntimeException(e);
                 }
@@ -150,26 +159,32 @@ public class SerializationFactory {
         }
     }
 
-    private static Serializer resolveSerializerInstance(Kryo k, Class superClass, Class<? extends Serializer> serializerClass,
+    private static Serializer resolveSerializerInstance(Kryo k, Class superClass,
+            Class<? extends Serializer> serializerClass,
                                                         Map<String, Object> conf) {
         try {
             try {
-                return serializerClass.getConstructor(Kryo.class, Class.class, Map.class).newInstance(k, superClass, conf);
+                return serializerClass.getConstructor(Kryo.class, Class.class, Map.class)
+                        .newInstance(k, superClass, conf);
             } catch (Exception ex1) {
                 try {
-                    return serializerClass.getConstructor(Kryo.class, Class.class).newInstance(k, superClass);
+                    return serializerClass.getConstructor(Kryo.class, Class.class).newInstance(k,
+                            superClass);
                 } catch (Exception ex2) {
                     try {
-                        return serializerClass.getConstructor(Kryo.class, Map.class).newInstance(k, conf);
+                        return serializerClass.getConstructor(Kryo.class, Map.class).newInstance(k,
+                                conf);
                     } catch (Exception ex3) {
                         try {
                             return serializerClass.getConstructor(Kryo.class).newInstance(k);
                         } catch (Exception ex4) {
                             try {
-                                return serializerClass.getConstructor(Class.class, Map.class).newInstance(superClass, conf);
+                                return serializerClass.getConstructor(Class.class, Map.class)
+                                        .newInstance(superClass, conf);
                             } catch (Exception ex5) {
                                 try {
-                                    return serializerClass.getConstructor(Class.class).newInstance(superClass);
+                                    return serializerClass.getConstructor(Class.class)
+                                            .newInstance(superClass);
                                 } catch (Exception ex6) {
                                     return serializerClass.newInstance();
                                 }
@@ -179,10 +194,12 @@ public class SerializationFactory {
                 }
             }
         } catch (Exception ex) {
-            throw new IllegalArgumentException("Unable to create serializer \""
-                                               + serializerClass.getName()
-                                               + "\" for class: "
-                                               + superClass.getName(), ex);
+            throw new IllegalArgumentException(
+                    "Unable to create serializer \""
+                            + serializerClass.getName()
+                            + "\" for class: "
+                            + (superClass == null ? "NoSuperClass" : superClass.getName()),
+                    ex);
         }
     }
 
@@ -204,7 +221,7 @@ public class SerializationFactory {
             }
         }
 
-        //ensure always same order for registrations with TreeMap
+        // ensure always same order for registrations with TreeMap
         return new TreeMap<>(ret);
     }
 
@@ -228,7 +245,8 @@ public class SerializationFactory {
         /**
          * "{:a 1  :b 2} -> {1 :a  2 :b}".
          *
-         * <p>Note: Only one key wins if there are duplicate values. Which key wins is indeterminate: "{:a 1  :b 1} -> {1 :a} *or* {1 :b}"
+         * <p>Note: Only one key wins if there are duplicate values. Which key wins is
+         * indeterminate: "{:a 1 :b 1} -> {1 :a} *or* {1 :b}"
          */
         private static <K, V> Map<V, K> simpleReverseMap(Map<K, V> map) {
             Map<V, K> ret = new HashMap<V, K>();
@@ -254,7 +272,8 @@ public class SerializationFactory {
         }
 
         public String getStreamName(String component, int stream) {
-            return streamIdToName.get(component).get(stream);
+            Map<Integer, String> streamNames = streamIdToName.get(component);
+            return streamNames == null ? null : streamNames.get(stream);
         }
     }
 }

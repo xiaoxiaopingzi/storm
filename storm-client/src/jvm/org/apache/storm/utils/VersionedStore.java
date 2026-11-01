@@ -16,7 +16,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import org.apache.storm.shade.org.apache.commons.io.FileUtils;
 
@@ -28,7 +27,7 @@ public class VersionedStore {
     /**
      * Creates a store at the given path.
      *
-     * @param The path for the store
+     * @param path The path for the store
      * @param createRootDir option to create the path directory
      */
     public VersionedStore(String path, boolean createRootDir) throws IOException {
@@ -128,15 +127,11 @@ public class VersionedStore {
     public void cleanup(int versionsToKeep) throws IOException {
         List<Long> versions = getAllVersions();
         if (versionsToKeep >= 0) {
-            versions = versions.subList(0, Math.min(versions.size(), versionsToKeep));
+            versions = versions.subList(Math.min(versions.size(), versionsToKeep), versions.size());
         }
-        HashSet<Long> keepers = new HashSet<Long>(versions);
 
-        for (String p : listDir(root)) {
-            Long v = parseVersion(p);
-            if (v != null && !keepers.contains(v)) {
-                deleteVersion(v);
-            }
+        for (Long v : versions) {
+            deleteVersion(v);
         }
     }
 
@@ -147,7 +142,8 @@ public class VersionedStore {
         List<Long> ret = new ArrayList<Long>();
         for (String s : listDir(root)) {
 
-            if (s.endsWith(FINISHED_VERSION_SUFFIX) && new File(s.substring(0, s.length() - FINISHED_VERSION_SUFFIX.length())).exists()) {
+            if (s.endsWith(FINISHED_VERSION_SUFFIX) && new File(s.substring(0, s
+                    .length() - FINISHED_VERSION_SUFFIX.length())).exists()) {
                 ret.add(validateAndGetVersion(s));
             }
         }

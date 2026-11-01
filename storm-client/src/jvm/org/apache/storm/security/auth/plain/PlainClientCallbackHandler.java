@@ -15,10 +15,12 @@ package org.apache.storm.security.auth.plain;
 import org.apache.storm.security.auth.sasl.SimpleSaslClientCallbackHandler;
 
 /**
- * This should only ever be used for testing.  It provides no security at all. DO NOT USE THIS.  The user name is the current user and the
+ * This should only ever be used for testing. It provides no security at all. DO NOT USE THIS. The
+ * user name is the current user and the
  * password is "password".
+ * @deprecated This should only ever be used for testing as it provides no security.
  */
-@Deprecated
+@Deprecated(since = "2.0.0", forRemoval = true)
 public class PlainClientCallbackHandler extends SimpleSaslClientCallbackHandler {
 
     /**

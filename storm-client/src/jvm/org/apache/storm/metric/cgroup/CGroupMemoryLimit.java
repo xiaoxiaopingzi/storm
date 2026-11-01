@@ -21,8 +21,10 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Reports the current memory limit of the cgroup for this worker.
+ *
+ * @deprecated please use Metrics V2 ({@link org.apache.storm.metrics2.cgroup.CGroupMemoryLimit}) instead.
  */
-@Deprecated
+@Deprecated(since = "2.3.0", forRemoval = true)
 public class CGroupMemoryLimit extends CGroupMetricsBase<Long> {
     private static final Logger LOG = LoggerFactory.getLogger(CGroupMemoryLimit.class);
     private static final long BYTES_PER_MB = 1024 * 1024;
@@ -30,7 +32,7 @@ public class CGroupMemoryLimit extends CGroupMetricsBase<Long> {
 
     public CGroupMemoryLimit(Map<String, Object> conf) {
         super(conf, SubSystemType.memory);
-        //In some cases we might be limiting memory in the supervisor and not in the cgroups
+        // In some cases we might be limiting memory in the supervisor and not in the cgroups
         long limit = -1;
         try {
             limit = Long.valueOf(System.getProperty("worker.memory_limit_mb", "-1"));

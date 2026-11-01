@@ -23,6 +23,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -42,10 +43,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.zip.ZipFile;
-import org.apache.commons.lang.RandomStringUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.storm.shade.org.apache.commons.lang.builder.ToStringBuilder;
-import org.apache.storm.shade.org.apache.commons.lang.builder.ToStringStyle;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.storm.shade.org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.storm.shade.org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.storm.testing.TmpPath;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -106,17 +107,24 @@ public class ServerUtilsTest {
     private Collection<Long> getRunningProcessIds(String user) throws IOException {
         // get list of few running processes
         Collection<Long> pids = new ArrayList<>();
-        String cmd = ServerUtils.IS_ON_WINDOWS ? "tasklist" : (user == null) ? "ps -e" : "ps -U " + user ;
+        int pidIndex = 0;
+        String cmd;
+        if (ServerUtils.IS_ON_WINDOWS) {
+            cmd = "tasklist";
+            pidIndex = 1;
+        } else {
+            cmd = (user == null) ? "ps -e" : "ps -U " + user;
+        }
         Process p = Runtime.getRuntime().exec(cmd);
         try (BufferedReader input = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
             String line;
             while ((line = input.readLine()) != null) {
                 line = line.trim();
-                if (line.isEmpty() || line.startsWith("PID")) {
+                if (line.isEmpty()) {
                     continue;
                 }
                 try {
-                    String pidStr = line.split("\\s")[0];
+                    String pidStr = line.split("\\s+")[pidIndex];
                     if (pidStr.equalsIgnoreCase("pid")) {
                         continue; // header line
                     }
@@ -389,5 +397,25 @@ public class ServerUtilsTest {
             return true;
         }
         return false;
+    }
+
+    @Test
+    public void testResolveTopologyConfSuppliedName() throws Exception {
+        File baseDir = new File(System.getProperty("java.io.tmpdir"), "stormdist/topo-1-1");
+
+        assertEquals(new File(baseDir, "myblob"), ServerUtils.resolveTopologyConfSuppliedName(baseDir, "myblob"));
+        assertEquals(new File(baseDir, "resources/myblob"), ServerUtils.resolveTopologyConfSuppliedName(baseDir, "resources/myblob"));
+
+        assertThrows(IOException.class, () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, ".."));
+        assertThrows(IOException.class, () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, "../other-topo/stormjar.jar"));
+        assertThrows(IOException.class, () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, "a/../../../etc/passwd"));
+        assertThrows(IOException.class, () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, "a/../b/../.."));
+        //a sibling directory whose name only starts with the base directory name is not inside it
+        assertThrows(IOException.class, () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, "../topo-1-1-evil/stormjar.jar"));
+        assertThrows(IOException.class, () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, "."));
+        assertThrows(IOException.class,
+            () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, new File("etc", "passwd").getAbsolutePath()));
+        assertThrows(IOException.class, () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, ""));
+        assertThrows(IOException.class, () -> ServerUtils.resolveTopologyConfSuppliedName(baseDir, null));
     }
 }

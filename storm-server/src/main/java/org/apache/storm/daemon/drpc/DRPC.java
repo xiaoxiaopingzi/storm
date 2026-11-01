@@ -28,6 +28,8 @@ import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import org.apache.storm.Config;
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.daemon.StormCommon;
 import org.apache.storm.generated.AuthorizationException;
@@ -75,14 +77,21 @@ public class DRPC implements AutoCloseable {
     private final Timer timer = new Timer("DRPC-CLEANUP-TIMER", true);
     private final AtomicLong ctr = new AtomicLong(0);
     private final IAuthorizer auth;
+    private final IAuthorizer impersonationAuth;
 
     public DRPC(StormMetricsRegistry metricsRegistry, Map<String, Object> conf) {
         this(metricsRegistry, mkAuthorizationHandler((String) conf.get(DaemonConfig.DRPC_AUTHORIZER), conf),
+             mkAuthorizationHandler((String) conf.get(DaemonConfig.NIMBUS_IMPERSONATION_AUTHORIZER), conf),
              ObjectReader.getInt(conf.get(DaemonConfig.DRPC_REQUEST_TIMEOUT_SECS), 600) * 1000);
     }
 
     public DRPC(StormMetricsRegistry metricsRegistry, IAuthorizer auth, long timeoutMs) {
+        this(metricsRegistry, auth, null, timeoutMs);
+    }
+
+    public DRPC(StormMetricsRegistry metricsRegistry, IAuthorizer auth, IAuthorizer impersonationAuth, long timeoutMs) {
         this.auth = auth;
+        this.impersonationAuth = impersonationAuth;
         this.meterServerTimedOut = metricsRegistry.registerMeter("drpc:num-server-timedout-requests");
         this.meterExecuteCalls = metricsRegistry.registerMeter("drpc:num-execute-calls");
         this.meterResultCalls = metricsRegistry.registerMeter("drpc:num-result-calls");
@@ -116,17 +125,40 @@ public class DRPC implements AutoCloseable {
     @VisibleForTesting
     static void checkAuthorization(ReqContext reqContext, IAuthorizer auth, String operation, String function)
         throws AuthorizationException {
-        checkAuthorization(reqContext, auth, operation, function, true);
+        checkAuthorization(reqContext, auth, null, operation, function, true);
     }
 
-    private static void checkAuthorization(ReqContext reqContext, IAuthorizer auth, String operation, String function, boolean log)
-        throws AuthorizationException {
+    private static void checkAuthorization(ReqContext reqContext, IAuthorizer auth, IAuthorizer impersonationAuth, String operation,
+                                           String function, boolean log) throws AuthorizationException {
         if (reqContext != null && log) {
             logAccess(reqContext, operation, function);
         }
+        Map<String, Object> map = new HashMap<>();
+        map.put(DRPCAuthorizerBase.FUNCTION_NAME, function);
+        if (reqContext != null && reqContext.isImpersonating()) {
+            LOG.debug("principal: {} is trying to impersonate principal: {}", reqContext.realPrincipal(), reqContext.principal());
+            String realUserName = reqContext.realPrincipal().getName();
+            if (realUserName == null || realUserName.isEmpty()) {
+                Principal principal = reqContext.principal();
+                throw new WrappedAuthorizationException("DRPC request '" + operation + "' on function '" + function + "'"
+                                                        + " gives doAsUser '" + (principal == null ? "unknown" : principal.getName())
+                                                        + "' without an authenticated user.");
+            }
+            if (impersonationAuth == null) {
+                LOG.warn("impersonation attempt but {} has no authorizer configured, so it is not checked. "
+                         + "See the impersonation section of the documentation to learn how to configure it.",
+                         DaemonConfig.NIMBUS_IMPERSONATION_AUTHORIZER);
+            } else if (!impersonationAuth.permit(reqContext, operation, map)) {
+                String fromHost = reqContext.remoteAddress() == null ? "" : " from host " + reqContext.remoteAddress();
+                throw new WrappedAuthorizationException("principal " + reqContext.realPrincipal()
+                                                        + " is not authorized to impersonate principal " + reqContext.principal()
+                                                        + fromHost
+                                                        + " for DRPC request '" + operation + "'"
+                                                        + " on function '" + function + "'."
+                                                        + " See " + Config.NIMBUS_IMPERSONATION_ACL + " to configure impersonation.");
+            }
+        }
         if (auth != null) {
-            Map<String, Object> map = new HashMap<>();
-            map.put(DRPCAuthorizerBase.FUNCTION_NAME, function);
             if (!auth.permit(reqContext, operation, map)) {
                 Principal principal = reqContext.principal();
                 String user = (principal != null) ? principal.getName() : "unknown";
@@ -136,17 +168,24 @@ public class DRPC implements AutoCloseable {
     }
 
     private void checkAuthorization(String operation, String function) throws AuthorizationException {
-        checkAuthorization(ReqContext.context(), auth, operation, function);
+        checkAuthorization(ReqContext.context(), auth, impersonationAuth, operation, function, true);
     }
 
     private void checkAuthorizationNoLog(String operation, String function) throws AuthorizationException {
-        checkAuthorization(ReqContext.context(), auth, operation, function, false);
+        checkAuthorization(ReqContext.context(), auth, impersonationAuth, operation, function, false);
     }
 
     private void cleanup(String id) {
         OutstandingRequest req = requests.remove(id);
-        if (req != null && !req.wasFetched()) {
-            queues.get(req.getFunction()).remove(req);
+        if (req != null) {
+            queues.computeIfPresent(req.getFunction(), (function, queue) -> {
+                if (!req.wasFetched()) {
+                    queue.remove(req);
+                }
+                //Drop the queue itself once nothing is waiting in it, otherwise the map keeps an
+                // entry for every function name a client has ever asked about.
+                return queue.isEmpty() ? null : queue;
+            });
         }
     }
 
@@ -165,16 +204,15 @@ public class DRPC implements AutoCloseable {
         return String.valueOf(ctr.incrementAndGet());
     }
 
-    private ConcurrentLinkedQueue<OutstandingRequest> getQueue(String function) {
+    private static void checkFunctionName(String function) {
         if (function == null) {
             throw new IllegalArgumentException("The function for a request cannot be null");
         }
-        ConcurrentLinkedQueue<OutstandingRequest> queue = queues.get(function);
-        if (queue == null) {
-            queues.putIfAbsent(function, new ConcurrentLinkedQueue<>());
-            queue = queues.get(function);
-        }
-        return queue;
+    }
+
+    @VisibleForTesting
+    int getNumTrackedFunctions() {
+        return queues.size();
     }
 
     public void returnResult(String id, String result) throws AuthorizationException {
@@ -190,8 +228,17 @@ public class DRPC implements AutoCloseable {
     public DRPCRequest fetchRequest(String functionName) throws AuthorizationException {
         meterFetchRequestCalls.mark();
         checkAuthorizationNoLog("fetchRequest", functionName);
-        ConcurrentLinkedQueue<OutstandingRequest> q = getQueue(functionName);
-        OutstandingRequest req = q.poll();
+        checkFunctionName(functionName);
+        //Never create a queue here.  A function name comes from the client, so a queue that no one
+        // ever puts a request into would stay in the map forever.  Poll and drop an emptied queue
+        // under the same lock execute() adds under, so a request can never be left in a queue that
+        // was just removed from the map.
+        AtomicReference<OutstandingRequest> polled = new AtomicReference<>();
+        queues.computeIfPresent(functionName, (function, queue) -> {
+            polled.set(queue.poll());
+            return queue.isEmpty() ? null : queue;
+        });
+        OutstandingRequest req = polled.get();
         if (req != null) {
             //Only log accesses that fetched something
             logAccess("fetchRequest", functionName);
@@ -219,12 +266,18 @@ public class DRPC implements AutoCloseable {
         AuthorizationException {
         meterExecuteCalls.mark();
         checkAuthorization("execute", functionName);
+        checkFunctionName(functionName);
         String id = nextId();
         LOG.debug("Execute {} {}", functionName, funcArgs);
         T req = factory.mkRequest(functionName, new DRPCRequest(funcArgs, id));
         requests.put(id, req);
-        ConcurrentLinkedQueue<OutstandingRequest> q = getQueue(functionName);
-        q.add(req);
+        queues.compute(functionName, (function, queue) -> {
+            if (queue == null) {
+                queue = new ConcurrentLinkedQueue<>();
+            }
+            queue.add(req);
+            return queue;
+        });
         return req;
     }
 

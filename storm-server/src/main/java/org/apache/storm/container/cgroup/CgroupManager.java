@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.apache.commons.lang.SystemUtils;
+import org.apache.commons.lang3.SystemUtils;
 import org.apache.storm.Config;
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.container.DefaultResourceIsolationManager;
@@ -232,7 +232,7 @@ public class CgroupManager extends DefaultResourceIsolationManager {
             command.add(2, "--membind=" + numaId);
             return;
         } else {
-            // TODO : Add support for pinning on Windows host
+            // TODO: Add support for pinning on Windows host
             throw new RuntimeException("numactl pinning currently not supported on non-Linux hosts");
         }
     }

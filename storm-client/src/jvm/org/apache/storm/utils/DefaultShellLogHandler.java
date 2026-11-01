@@ -36,16 +36,16 @@ public class DefaultShellLogHandler implements ShellLogHandler {
 
     private Logger getLogger(final Class<?> ownerCls) {
         return LoggerFactory.getLogger(
-            ownerCls == null ? DefaultShellLogHandler.class : ownerCls);
+                ownerCls == null ? DefaultShellLogHandler.class : ownerCls);
     }
 
     /**
-     * This default implementation saves the {@link ShellProcess} so it can output the process info string later.
+     * This default implementation saves the {@link ShellProcess} so it can output the process info
+     * string later.
      *
      * @param ownerCls - the class which instantiated this ShellLogHandler.
      * @param process  - the current {@link ShellProcess}.
      * @param context  - the current {@link TopologyContext}.
-     * @see {@link ShellLogHandler#setUpContext}
      */
     @Override
     public void setUpContext(final Class<?> ownerCls, final ShellProcess process,
@@ -60,7 +60,6 @@ public class DefaultShellLogHandler implements ShellLogHandler {
      * Log the given message.
      *
      * @param shellMsg - the {@link ShellMsg} to log.
-     * @see {@link ShellLogHandler#log}
      */
     @Override
     public void log(final ShellMsg shellMsg) {

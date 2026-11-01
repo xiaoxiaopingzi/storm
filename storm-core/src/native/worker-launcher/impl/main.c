@@ -19,6 +19,7 @@
 #include "configuration.h"
 #include "worker-launcher.h"
 #include "oci/oci.h"
+#include "oci/oci_launch_cmd.h"
 #include "oci/oci_reap.h"
 
 #include <errno.h>
@@ -122,9 +123,21 @@ int main(int argc, char **argv) {
 
   set_launcher_uid(getuid(), group_info->gr_gid);
   // if we are running from a setuid executable, make the real uid root
-  setuid(0);
+  if (setuid(0) != 0) {
+    fprintf(ERRORFILE, "ERROR: unable to set user to root - %s\n", strerror(errno));
+    fprintf(ERRORFILE, "The worker-launcher binary must be owned by root, group-owned by the"
+            " worker-launcher group, with mode 6550 (setuid/setgid)"
+            " (see \"Run worker processes as user who submitted the topology\" in SECURITY.md).\n");
+    fflush(ERRORFILE);
+    exit(SETUID_OPER_FAILED);
+  }
   // set the real and effective group id to the node manager group
-  setgid(group_info->gr_gid);
+  if (setgid(group_info->gr_gid) != 0) {
+    fprintf(ERRORFILE, "ERROR: unable to set group to %u - %s\n", group_info->gr_gid,
+            strerror(errno));
+    fflush(ERRORFILE);
+    exit(SETUID_OPER_FAILED);
+  }
 
   if (check_executor_permissions(executable_file) != 0) {
     fprintf(LOGFILE, "worker-launcher config file: %s \n", conf_file);
@@ -218,11 +231,15 @@ int main(int argc, char **argv) {
       exit_code = INVALID_ARGUMENT_NUMBER;
     } else {
       working_dir = argv[optind++];
+      // Read and parse the docker command file before setup_dir_permissions
+      // changes the ownership of the worker directory (which contains the
+      // command file) below.
+      char *docker_command = parse_docker_command_file(argv[optind]);
       exit_code = setup_dir_permissions(working_dir, 1, TRUE);
       if (exit_code == 0) {
         exit_code = setup_worker_tmp_permissions(working_dir);
         if (exit_code == 0) {
-          exit_code = run_docker_cmd(working_dir, argv[optind]);
+          exit_code = exec_docker_cmd(docker_command);
         }
       }
     }
@@ -242,8 +259,16 @@ int main(int argc, char **argv) {
       exit_code = INVALID_ARGUMENT_NUMBER;
     } else {
       const char * worker_id = argv[optind++];
-      int pid = get_docker_container_pid(worker_id);
-      exit_code = profile_oci_container(pid, argv[optind]);
+      // Validate the worker id (a type 4 UUID, the same shape as a container
+      // id) before it is used to build the docker command line.
+      if (!validate_container_id(worker_id)) {
+        fprintf(ERRORFILE, "ERROR: Bad worker id in profile-docker-container: %s\n", worker_id);
+        fflush(ERRORFILE);
+        exit_code = INVALID_ARGUMENT_NUMBER;
+      } else {
+        int pid = get_docker_container_pid(worker_id);
+        exit_code = profile_oci_container(pid, argv[optind]);
+      }
     }
   } else if (strcasecmp("profiler", command) == 0) {
     if (argc != 5) {
@@ -289,15 +314,36 @@ int main(int argc, char **argv) {
       working_dir = argv[optind++];
       const char* command_file = argv[optind++];
       const char* worker_artifacts_dir = argv[optind];
-      exit_code = setup_dir_permissions(working_dir, 1, TRUE);
-      if (exit_code == 0) {
-        exit_code = setup_worker_tmp_permissions(working_dir);
+      // Parse the launch command file before setup_dir_permissions changes
+      // the ownership of the worker directory (which contains the command
+      // file) below.
+      oci_launch_cmd* olc = parse_oci_launch_cmd(command_file);
+      if (olc == NULL) {
+        exit_code = INVALID_CONFIG_FILE;
+      } else if (!oci_launch_cmd_matches_user(olc, user_name)) {
+        // The launch command file's username must match the user passed to
+        // the worker-launcher on the command line.
+        fprintf(ERRORFILE, "ERROR: OCI command file username %s does not match %s\n",
+                olc->username, user_name);
+        fflush(ERRORFILE);
+        exit_code = INVALID_USER_NAME;
+      } else {
+        exit_code = setup_dir_permissions(working_dir, 1, TRUE);
         if (exit_code == 0) {
-          //becomes root.
-          setuid(0);
-          exit_code = run_oci_container(command_file, worker_artifacts_dir);
+          exit_code = setup_worker_tmp_permissions(working_dir);
+          if (exit_code == 0) {
+            //becomes root.
+            if (setuid(0) != 0) {
+              fprintf(ERRORFILE, "ERROR: unable to set user to root - %s\n", strerror(errno));
+              fflush(ERRORFILE);
+              exit_code = SETUID_OPER_FAILED;
+            } else {
+              exit_code = run_oci_container(olc, worker_artifacts_dir);
+            }
+          }
         }
       }
+      free_oci_launch_cmd(olc);
     }
   } else if (strcasecmp("reap-oci-container", command) == 0) {
     if (argc != 5) {
@@ -308,9 +354,22 @@ int main(int argc, char **argv) {
     } else {
       char* container_id = argv[optind++];
       int num_reap_layers_keep = atoi(argv[optind]);
-      //becomes root.
-      setuid(0);
-      exit_code = cleanup_oci_container_by_id(container_id, num_reap_layers_keep);
+      // Validate the container id before it is used in a filesystem path or
+      // the runc command line.
+      if (!validate_container_id(container_id)) {
+        fprintf(ERRORFILE, "ERROR: Bad container id in reap-oci-container: %s\n", container_id);
+        fflush(ERRORFILE);
+        exit_code = INVALID_ARGUMENT_NUMBER;
+      } else {
+        //becomes root.
+        if (setuid(0) != 0) {
+          fprintf(ERRORFILE, "ERROR: unable to set user to root - %s\n", strerror(errno));
+          fflush(ERRORFILE);
+          exit_code = SETUID_OPER_FAILED;
+        } else {
+          exit_code = cleanup_oci_container_by_id(container_id, num_reap_layers_keep);
+        }
+      }
     }
   } else if (strcasecmp("profile-oci-container", command) == 0) {
     if (argc != 5) {

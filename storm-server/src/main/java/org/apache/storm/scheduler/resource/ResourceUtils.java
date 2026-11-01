@@ -14,6 +14,9 @@ package org.apache.storm.scheduler.resource;
 
 import java.util.HashMap;
 import java.util.Map;
+import net.minidev.json.JSONObject;
+import net.minidev.json.parser.JSONParser;
+import net.minidev.json.parser.ParseException;
 import org.apache.storm.Config;
 import org.apache.storm.generated.Bolt;
 import org.apache.storm.generated.ComponentCommon;
@@ -21,9 +24,6 @@ import org.apache.storm.generated.SpoutSpec;
 import org.apache.storm.generated.StormTopology;
 import org.apache.storm.scheduler.resource.normalization.NormalizedResourceRequest;
 import org.apache.storm.scheduler.resource.normalization.NormalizedResources;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +46,7 @@ public class ResourceUtils {
                 NormalizedResourceRequest topologyResources = new NormalizedResourceRequest(bolt.getValue().get_common(),
                         topologyConf, bolt.getKey());
                 if (LOG.isTraceEnabled()) {
-                    LOG.trace("Turned {} into {}", bolt.getValue().get_common().get_json_conf(), topologyResources);
+                    LOG.trace("Turned component {} into {}", bolt.getKey(), topologyResources);
                 }
                 boltResources.put(bolt.getKey(), topologyResources);
             }
@@ -71,7 +71,7 @@ public class ResourceUtils {
                 NormalizedResourceRequest topologyResources = new NormalizedResourceRequest(spout.getValue().get_common(),
                         topologyConf, spout.getKey());
                 if (LOG.isTraceEnabled()) {
-                    LOG.trace("Turned {} into {}", spout.getValue().get_common().get_json_conf(), topologyResources);
+                    LOG.trace("Turned component {} into {}", spout.getKey(), topologyResources);
                 }
                 spoutResources.put(spout.getKey(), topologyResources);
             }

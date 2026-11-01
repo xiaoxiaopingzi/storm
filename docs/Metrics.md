@@ -34,7 +34,7 @@ To register metrics consumer to your topology, add to your topology's configurat
 conf.registerMetricsConsumer(org.apache.storm.metric.LoggingMetricsConsumer.class, 1);
 ```
 
-You can refer [Config#registerMetricsConsumer](javadocs/org/apache/storm/Config.html#registerMetricsConsumer-java.lang.Class-) and overloaded methods from javadoc.
+You can refer [Config#registerMetricsConsumer](https://javadoc.io/doc/org.apache.storm/storm-client/3.0.0/org/apache/storm/Config.html#registerMetricsConsumer-java.lang.Class-) and overloaded methods from javadoc.
 
 Otherwise edit the storm.yaml config file:
 
@@ -56,7 +56,7 @@ Storm provides some built-in metrics consumers for you to try out to see which m
 
 Also, Storm exposes the interface [`IMetricsConsumer`]({{page.git-blob-base}}/storm-client/src/jvm/org/apache/storm/metric/api/IMetricsConsumer.java) for implementing Metrics Consumer so you can create custom metrics consumers and attach to their topologies, or use other great implementation of Metrics Consumers provided by Storm community. Some of examples are [versign/storm-graphite](https://github.com/verisign/storm-graphite), and [storm-metrics-statsd](https://github.com/endgameinc/storm-metrics-statsd).
 
-When you implement your own metrics consumer, `argument` is passed to Object when [IMetricsConsumer#prepare](javadocs/org/apache/storm/metric/api/IMetricsConsumer.html#prepare-java.util.Map-java.lang.Object-org.apache.storm.task.TopologyContext-org.apache.storm.task.IErrorReporter-) is called, so you need to infer the Java type of configured value on yaml, and do explicit type casting.
+When you implement your own metrics consumer, `argument` is passed to Object when [IMetricsConsumer#prepare](https://javadoc.io/doc/org.apache.storm/storm-client/3.0.0/org/apache/storm/metric/api/IMetricsConsumer.html#prepare-java.util.Map-java.lang.Object-org.apache.storm.task.TopologyContext-org.apache.storm.task.IErrorReporter-) is called, so you need to infer the Java type of configured value on yaml, and do explicit type casting.
 
 Please keep in mind that MetricsConsumerBolt is just a kind of Bolt, so whole throughput of the topology will go down when registered metrics consumers cannot keep up handling incoming metrics, so you may want to take care of those Bolts like normal Bolts. One of idea to avoid this is making your implementation of Metrics Consumer as `non-blocking` fashion.
 
@@ -84,7 +84,7 @@ public void prepare(Map conf, TopologyContext context, OutputCollector collector
 }
 ```
 
-The meaning of first and second parameters are straightforward, metric name and instance of IMetric. Third parameter of [TopologyContext#registerMetric](javadocs/org/apache/storm/task/TopologyContext.html#registerMetric-java.lang.String-T-int-) is the period (seconds) to publish and reset the metric.
+The meaning of first and second parameters are straightforward, metric name and instance of IMetric. Third parameter of [TopologyContext#registerMetric](https://javadoc.io/doc/org.apache.storm/storm-client/3.0.0/org/apache/storm/task/TopologyContext.html#registerMetric-java.lang.String-T-int-) is the period (seconds) to publish and reset the metric.
 
 Last, let's increment the value when Bolt.execute() is executed.
 
@@ -180,15 +180,22 @@ Similar to the tuple counting metrics storm also collects average latency metric
 
 ##### `__complete-latency`
 
-The complete latency is just for spouts.  It is the average amount of time it took for `ack` or `fail` to be called for a tuple after it was emitted.  If acking is disabled this metric is likely to be blank or 0 for all values, and should be ignored.
+The complete latency is just for spouts. It is the average amount of time it took for `ack` or `fail` to be called for a
+tuple after it was emitted. If acking is disabled this metric is likely to be blank or 0 for all values, and should be
+ignored.
 
 ##### `__execute-latency`
 
-This is just for bolts.  It is the average amount of time that the bolt spent in the call to the `execute` method.  The higher this gets, the lower the throughput of tuples per bolt instance.
+This is just for bolts. It is the average amount of time that the bolt spent in the call to the `execute` method. The
+higher this gets, the lower the throughput of tuples per bolt instance.
 
 ##### `__process-latency`
 
-This is also just for bolts.  It is the average amount of time between when `execute` was called to start processing a tuple, to when it was acked or failed by the bolt.  If your bolt is a very simple bolt and the processing is synchronous then `__process-latency` and `__execute-latency` should be very close to one another, with process latency being slightly smaller.  If you are doing a join or have asynchronous processing then it may take a while for a tuple to be acked so the process latency would be higher than the execute latency.
+This is also just for bolts. It is the average amount of time between when `execute` was called to start processing a
+tuple, to when it was acked or failed by the bolt. If your bolt is a very simple bolt and the processing is synchronous
+then `__process-latency` and `__execute-latency` should be very close to one another, with process latency being
+slightly smaller. If you are doing a join or have asynchronous processing then it may take a while for a tuple to be
+acked so the process latency would be higher than the execute latency.
 
 ##### `__skipped-max-spout-ms`
 
@@ -206,6 +213,35 @@ This metric indicates the overflow count last time BP status was sent, with a mi
 ##### `skipped-inactive-ms`
 
 This metric records how much time a spout was idle because the topology was deactivated.  This is the total time in milliseconds, not the average amount of time and is not sub-sampled.
+
+#### Tuple Jitter Metrics
+To activate jitter-based metrics, `topology.stats.ewma.enable` must be set to `true`, which switches the system to a jitter estimation based on an Exponential Moving Average (EWMA).
+In this model, jitter is dynamically updated by weighting new latency samples against historical data using a smoothing factor (`topology.stats.ewma.smoothing.factor`).
+This parameter, which defaults to 0.0625 (equivalent to $1/16$ or a 4-bit right shift), determines the metric's reactivity: higher values make the jitter more sensitive to recent spikes, while lower values prioritize long-term stability.
+Operators should be aware that enabling this feature triples the gauge count for every component-stream pair per task; this significant increase in metric cardinality can impact TSDB storage and costs, so backend capacity should be verified before deployment.
+
+##### `__complete-jitter`
+
+This metric is specific to spouts. It measures the variation (jitter) in the total completion time (end-to-end latency)
+of tuples, calculated using the exponentially weighted moving average (EWMA) algorithm as defined in RFC 1889 §A.8 / RFC 3550 §A.8.
+While `__complete-latency` indicates the average amount of time it took for a tuple to be fully processed by the
+topology (from emission to the final ack), the jitter metric quantifies the consistency of that process. If acking is
+disabled, this metric is likely to be blank or 0 and should be ignored.
+
+##### `__execute-jitter`
+
+This metric is specific to bolts. It measures the variation (jitter) in the time spent within the execute method,
+calculated using the exponentially weighted moving average (EWMA) algorithm as defined in RFC 1889 §A.8 / RFC 3550 §A.8.
+While `__execute-latency` provides the average time spent in the execute call, the jitter metric quantifies the
+predictability of that execution time. It is a critical indicator of computational "smoothness".
+
+##### `__process-jitter`
+
+This metric is specific to bolts. It measures the variation (jitter) in the process latency, calculated using the
+exponentially weighted moving average (EWMA) algorithm as defined in RFC 1889 §A.8 / RFC 3550 §A.8.
+While `__process-latency` provides the average time a tuple spends being processed, the jitter metric quantifies the
+stability of that processing time. It helps identify "noisy" execution environments where processing times fluctuate
+significantly, even if the average remains within acceptable limits.
 
 #### Error Reporting Metrics
 
@@ -259,12 +295,14 @@ Be aware that the `__system` bolt is an actual bolt so regular bolt metrics desc
     "dequeuedMessages": 0,
     "enqueued": {
       "/127.0.0.1:49952": 389951
-    }
+    },
+    "deserializationFailures": 0
 }
 ```
 
 `dequeuedMessages` is a throwback to older code where there was an internal queue between the server and the bolts/spouts.  That is no longer the case and the value can be ignored.
 `enqueued` is a map between the address of the remote worker and the number of tuples that were sent from it to this worker.
+`deserializationFailures` is the number of incoming messages that failed to deserialize and were dropped. When `topology.tuple.deserialization.strict.enable` is set, deserialization failures are not dropped or counted; they terminate the worker instead.
 
 ##### Send (Netty Client)
 
@@ -303,13 +341,11 @@ Please refer to the [JVM documentation](https://docs.oracle.com/javase/8/docs/ap
 
 * There are metrics prefixed with `threads` providing the number of threads, daemon threads, blocked and deadlocked threads.
 
-##### Uptime
-
-* `uptimeSecs` reports the number of seconds the worker has been up for
-* `newWorkerEvent` is 1 when a worker is first started and 0 all other times.  This can be used to tell when a worker has crashed and is restarted.
-* `startTimeSecs` is when the worker started in seconds since the epoch
-
-##### doHeartbeat-calls
+##### Other worker metrics
 
 * `doHeartbeat-calls` is a meter that indicates the rate the worker is performing heartbeats.
+* `newWorkerEvent` is 1 when a worker is first started and 0 all other times.  This can be used to tell when a worker has crashed and is restarted.
+* `startTimeSecs` is when the worker started in seconds since the epoch
+* `uptimeSecs` reports the number of seconds the worker has been up for
+* `workerCpuUsage` reports the cpu usage of the worker as a percentage of cores.  1.0 indicates 1 cpu core.
 

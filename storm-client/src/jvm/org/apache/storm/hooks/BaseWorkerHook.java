@@ -13,26 +13,14 @@
 package org.apache.storm.hooks;
 
 import java.io.Serializable;
-import java.util.Map;
-import org.apache.storm.task.WorkerTopologyContext;
 
 /**
- * A BaseWorkerHook is a noop implementation of IWorkerHook. You may extends this class and implement any and/or all
+ * A BaseWorkerHook is a noop implementation of IWorkerHook. You may extends this class and
+ * implement any and/or all
  * methods you need for your workers.
  */
 public class BaseWorkerHook implements IWorkerHook, Serializable {
     private static final long serialVersionUID = 2589466485198339529L;
-
-    /**
-     * This method is called when a worker is started.
-     *
-     * @param topoConf The Storm configuration for this worker
-     * @param context  This object can be used to get information about this worker's place within the topology
-     */
-    @Override
-    public void start(Map<String, Object> topoConf, WorkerTopologyContext context) {
-        // NOOP
-    }
 
     /**
      * This method is called right before a worker shuts down.

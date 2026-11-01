@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
-import redis.clients.util.SafeEncoder;
+import redis.clients.jedis.util.SafeEncoder;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -80,7 +80,7 @@ public class RedisKeyValueStateTest {
                    return hget(mockMap, (byte[]) args[0], (byte[]) args[1]);
                });
 
-        Mockito.when(mockCommands.hdel(Mockito.any(byte[].class), Mockito.<byte[]>anyVararg()))
+        Mockito.when(mockCommands.hdel(Mockito.any(byte[].class), Mockito.<byte[]>any()))
                .thenAnswer((Answer<Long>) invocation -> {
                    Object[] args = invocation.getArguments();
                    int argsSize = args.length;

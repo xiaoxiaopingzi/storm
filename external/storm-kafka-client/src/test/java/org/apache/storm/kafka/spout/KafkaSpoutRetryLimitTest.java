@@ -19,7 +19,7 @@ import static org.apache.storm.kafka.spout.config.builder.SingleTopicKafkaSpoutC
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -27,6 +27,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,7 @@ public class KafkaSpoutRetryLimitTest {
     private final long offsetCommitPeriodMs = 2_000;
     private final TopologyContext contextMock = mock(TopologyContext.class);
     private final SpoutOutputCollector collectorMock = mock(SpoutOutputCollector.class);
+    private final KafkaTupleListener tupleListener = mock(KafkaTupleListener.class);
     private final Map<String, Object> conf = new HashMap<>();
     private final TopicPartition partition = new TopicPartition(SingleTopicKafkaSpoutConfiguration.TOPIC, 1);
     @Mock
@@ -71,6 +73,7 @@ public class KafkaSpoutRetryLimitTest {
         spoutConfig = createKafkaSpoutConfigBuilder(mock(TopicFilter.class), mock(ManualPartitioner.class), -1)
             .setOffsetCommitPeriodMs(offsetCommitPeriodMs)
             .setRetry(ZERO_RETRIES_RETRY_SERVICE)
+            .setTupleListener(tupleListener)
             .build();
     }
     
@@ -84,7 +87,7 @@ public class KafkaSpoutRetryLimitTest {
             int numRecords = lastOffset + 1;
             records.put(partition, SpoutWithMockedConsumerSetupHelper.createRecords(partition, 0, numRecords));
             
-            when(consumerMock.poll(anyLong()))
+            when(consumerMock.poll(any(Duration.class)))
                 .thenReturn(new ConsumerRecords<>(records));
             
             for (int i = 0; i < numRecords; i++) {
@@ -98,13 +101,20 @@ public class KafkaSpoutRetryLimitTest {
                 spout.fail(messageId);
             }
 
+            // The give-up contract: onMaxRetryReached runs before the tuple is acked.
+            InOrder giveUpOrder = inOrder(tupleListener);
+            for (KafkaSpoutMessageId messageId : messageIds.getAllValues()) {
+                giveUpOrder.verify(tupleListener).onMaxRetryReached(messageId);
+                giveUpOrder.verify(tupleListener).onAck(messageId);
+            }
+
             // Advance time and then trigger call to kafka consumer commit
             Time.advanceTime(KafkaSpout.TIMER_DELAY_MS + offsetCommitPeriodMs);
             spout.nextTuple();
             
             InOrder inOrder = inOrder(consumerMock);
             inOrder.verify(consumerMock).commitSync(commitCapture.capture());
-            inOrder.verify(consumerMock).poll(anyLong());
+            inOrder.verify(consumerMock).poll(any(Duration.class));
 
             //verify that offset 4 was committed for the given TopicPartition, since processing should resume at 4.
             assertTrue(commitCapture.getValue().containsKey(partition));

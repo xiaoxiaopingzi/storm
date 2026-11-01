@@ -19,17 +19,21 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <artifactId>storm</artifactId>
+        <artifactId>storm-examples</artifactId>
         <groupId>org.apache.storm</groupId>
-        <version>2.5.0-SNAPSHOT</version>
-        <relativePath>../../pom.xml</relativePath>
+        <version>3.1.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
 
     <artifactId>storm-jms-examples</artifactId>
 
+
+
+
+    <name>Storm JMS Examples</name>
     <properties>
-        <spring.version>5.3.20</spring.version>
+        <spring.version>7.0.10</spring.version>
     </properties>
     <dependencies>
         <dependency>
@@ -55,7 +59,7 @@
         <dependency>
             <groupId>org.apache.xbean</groupId>
             <artifactId>xbean-spring</artifactId>
-            <version>4.8</version>
+            <version>5.0.0</version>
         </dependency>
         <dependency>
             <groupId>org.apache.storm</groupId>
@@ -100,6 +104,16 @@
                     </execution>
                 </executions>
 
+            </plugin>
+            <plugin>
+                <groupId>org.openrewrite.maven</groupId>
+                <artifactId>rewrite-maven-plugin</artifactId>
+                <!--Note - the version/config would be inherited-->
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.gmavenplus</groupId>
+                <artifactId>gmavenplus-plugin</artifactId>
+                <!--Note - the version/config would be inherited-->
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -82,6 +82,8 @@ The following metric reporters are supported
     Reports metrics to a [Graphite](https://graphiteapp.org) server.
   * JMX Reporter (`org.apache.storm.metrics2.reporters.JmxStormReporter`):
     Exposes metrics via JMX.
+  * Prometheus Reporter (`org.apache.storm.metrics.prometheus.PrometheusStormReporter`, in the `storm-metrics-prometheus` module):
+    Serves the metrics of each worker over HTTP for [Prometheus](https://prometheus.io) to scrape, with the task dimensions as labels.
   
  Custom metrics reporters can be created by implementing `org.apache.storm.metrics2.reporters.StormReporter` interface 
  or extending `org.apache.storm.metrics2.reporters.ScheduledStormReporter` class.
@@ -118,7 +120,7 @@ is determined by the `report.period` and `report.period.units` parameters.
 
 Reporters can also be configured with an optional filter that determines which metrics get reported. Storm includes the
 `org.apache.storm.metrics2.filters.RegexFilter` filter which uses a regular expression to determine which metrics get
-reported. Custom filters can be created by implementing the `org.apache.storm.metrics2.filters.StormMetricFilter`
+reported. Custom filters can be created by implementing the `org.apache.storm.metrics2.filters.StormMetricsFilter`
 interface:
 
 ```java
@@ -147,11 +149,11 @@ to using the long metric name, but can report the short name by configuring repo
 1. V2 metrics can also be reported to the Metrics Consumers registered with `topology.metrics.consumer.register` by enabling the `topology.enable.v2.metrics.tick` configuration.
 The rate that they will reported to Metric Consumers is controlled by `topology.v2.metrics.tick.interval.seconds`, defaulting to every 60 seconds.
 
-2. Starting from storm 2.3, the config `storm.metrics.reporters` is deprecated in favor of `topology.metrics.reporters`.
+2. The configuration key `storm.metrics.reporters` was deprecated in 2.3.0 and has been removed. Use `topology.metrics.reporters` instead.
 
-3. Starting from storm 2.3, the `daemons` section is removed from `topology.metrics.reporters` (or `storm.metrics.reporters`).
+3. Starting from storm 2.3, the `daemons` section is removed from `topology.metrics.reporters`.
    Before storm 2.3, a `daemons` section is required in the reporter conf to determine which daemons the reporters will apply to. 
-However, the reporters configured with `topology.metrics.reporters` (or `storm.metrics.reporters`) actually only apply to workers. They are never really used in daemons like nimbus, supervisor and etc. 
+However, the reporters configured with `topology.metrics.reporters` actually only apply to workers. They are never really used in daemons like nimbus, supervisor and etc. 
    For daemon metrics, please refer to [Cluster Metrics](ClusterMetrics.html).
 
 4. **Backwards Compatibility Breakage**: starting from storm 2.3, the following configs no longer apply to `topology.metrics.reporters`:

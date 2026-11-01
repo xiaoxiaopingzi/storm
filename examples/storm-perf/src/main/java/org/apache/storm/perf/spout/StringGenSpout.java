@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import org.apache.commons.lang.RandomStringUtils;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.storm.spout.SpoutOutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -30,7 +30,8 @@ import org.apache.storm.topology.base.BaseRichSpout;
 import org.apache.storm.tuple.Fields;
 
 /**
- * Spout pre-computes a list with 30k fixed length random strings. Emits sequentially from this list, over and over again.
+ * Spout pre-computes a list with 30k fixed length random strings. Emits sequentially from this
+ * list, over and over again.
  */
 
 public class StringGenSpout extends BaseRichSpout {
@@ -67,7 +68,8 @@ public class StringGenSpout extends BaseRichSpout {
     }
 
     @Override
-    public void open(Map<String, Object> conf, TopologyContext context, SpoutOutputCollector collector) {
+    public void open(Map<String, Object> conf, TopologyContext context,
+                     SpoutOutputCollector collector) {
         this.records = genStringList(strLen, strCount);
 
         this.collector = collector;
@@ -82,7 +84,6 @@ public class StringGenSpout extends BaseRichSpout {
             collector.emit(tuple, ++count);
         }
     }
-
 
     @Override
     public void ack(Object msgId) {

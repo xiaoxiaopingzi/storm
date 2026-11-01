@@ -19,23 +19,23 @@
 package org.apache.storm.loadgen;
 
 import com.esotericsoftware.kryo.io.Input;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import org.apache.storm.metric.api.IMetricsConsumer.DataPoint;
 import org.apache.storm.metric.api.IMetricsConsumer.TaskInfo;
 import org.apache.storm.serialization.KryoValuesDeserializer;
 import org.apache.storm.utils.Utils;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
 
 /**
  * A server that can listen for metrics from the HttpForwardingMetricsConsumer.

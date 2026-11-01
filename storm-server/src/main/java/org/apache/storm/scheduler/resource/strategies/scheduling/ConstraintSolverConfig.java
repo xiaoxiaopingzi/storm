@@ -21,7 +21,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.storm.Config;
-import org.apache.storm.scheduler.ExecutorDetails;
 import org.apache.storm.scheduler.TopologyDetails;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,7 +119,7 @@ public final class ConstraintSolverConfig {
                                 }
                                 List<String> list;
                                 list = (constraint instanceof String) ? Arrays.asList((String) constraint) : (List<String>) constraint;
-                                for (String comp2: list) {
+                                for (String comp2 : list) {
                                     if (!comps.contains(comp2)) {
                                         LOG.warn("TopoId {}: {} {} declared for Comp {} is not a valid Comp", topoId, ctype, comp2, comp1);
                                         continue;

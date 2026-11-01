@@ -79,6 +79,12 @@ public class DaemonConfig implements Validated {
     public static final String STORM_DAEMON_METRICS_REPORTER_PLUGIN_DOMAIN = "storm.daemon.metrics.reporter.plugin.domain";
 
     /**
+     * We report the metrics with this interval period.
+     */
+    @IsInteger
+    public static final String STORM_DAEMON_METRICS_REPORTER_INTERVAL_SECS = "storm.daemon.metrics.reporter.interval.secs";
+
+    /**
      * Specify the csv reporter directory for CvsPreparableReporter daemon metrics reporter.
      */
     @IsString
@@ -170,6 +176,37 @@ public class DaemonConfig implements Validated {
     public static final String SCHEDULER_DISPLAY_RESOURCE = "scheduler.display.resource";
 
     /**
+     * If true, {@link org.apache.storm.scheduler.EvenScheduler} may move already-assigned workers onto non-blacklisted supervisors
+     * with no slot in use. This lets a freshly returned supervisor pick up workers instead of staying idle. The number of workers
+     * freed per topology in a single scheduling round is capped by {@link #NIMBUS_EVEN_REBALANCE_MAX_FREE_PER_TOPOLOGY}, so even
+     * distribution is approached gradually rather than rebuilt from scratch.
+     */
+    @IsBoolean
+    public static final String NIMBUS_EVEN_REBALANCE_ON_IDLE_SUPERVISOR_ENABLED
+            = "nimbus.even.rebalance.idle.supervisor.enabled";
+
+    /**
+     * Optional upper bound on the number of currently-assigned workers a single topology may release in one scheduling round
+     * when the idle-supervisor rebalance defined by {@link #NIMBUS_EVEN_REBALANCE_ON_IDLE_SUPERVISOR_ENABLED} kicks in. The
+     * default budget already targets an even per-supervisor distribution (idle supervisors absorb roughly {@code numWorkers /
+     * numSupervisors} workers each in one round), capped by the idle side's free slot capacity. Setting this to a positive
+     * value tightens that budget; setting it to {@code 0} or a negative value leaves the even-distribution budget unbounded.
+     */
+    @IsInteger
+    public static final String NIMBUS_EVEN_REBALANCE_MAX_FREE_PER_TOPOLOGY
+            = "nimbus.even.rebalance.max.free.per.topology";
+
+    /**
+     * Minimum number of consecutive supervisor monitor rounds that a fully-idle supervisor must have been alive before
+     * {@link org.apache.storm.scheduler.EvenScheduler} can relocate workers onto it. A positive value avoids moving workers onto a
+     * supervisor that has only just returned and may still be flapping. Setting this to {@code 0} or a negative value disables the
+     * uptime guard.
+     */
+    @IsInteger
+    public static final String NIMBUS_EVEN_REBALANCE_IDLE_SUPERVISOR_MIN_STABLE_ROUNDS
+            = "nimbus.even.rebalance.idle.supervisor.min.stable.rounds";
+
+    /**
      * The directory where storm's health scripts go.
      */
     @IsString
@@ -233,17 +270,16 @@ public class DaemonConfig implements Validated {
      * it takes to delete an inbox jar file is going to be somewhat more than NIMBUS_CLEANUP_INBOX_JAR_EXPIRATION_SECS
      * (depending on how often NIMBUS_CLEANUP_FREQ_SECS is set to).
      *
+     * <p>This is also how long a dependency blob uploaded by a client may go without any topology referring to it
+     * before nimbus deletes it from the blob store, which covers the time between uploading the dependencies of a
+     * topology and submitting it.
+     *
      * @see #NIMBUS_CLEANUP_INBOX_FREQ_SECS
      */
     @IsInteger
     public static final String NIMBUS_INBOX_JAR_EXPIRATION_SECS = "nimbus.inbox.jar.expiration.secs";
 
-    /**
-     * How long before a supervisor can go without heartbeating before nimbus considers it dead and stops assigning new work to it.
-     */
-    @IsInteger
-    @IsPositiveNumber
-    public static final String NIMBUS_SUPERVISOR_TIMEOUT_SECS = "nimbus.supervisor.timeout.secs";
+
 
     /**
      * A special timeout used when a task is initially launched. During launch, this is the timeout used until the first heartbeat,
@@ -341,6 +377,12 @@ public class DaemonConfig implements Validated {
     public static final String UI_PORT = "ui.port";
 
     /**
+     * Storm UI's title.
+     */
+    @IsString
+    public static final String UI_TITLE = "ui.title";
+
+    /**
      * This controls wheather Storm UI should bind to http port even if ui.port is > 0.
      */
     @IsBoolean
@@ -351,6 +393,14 @@ public class DaemonConfig implements Validated {
      */
     @IsBoolean
     public static final String UI_DISABLE_SPOUT_LAG_MONITORING = "ui.disable.spout.lag.monitoring";
+
+    /**
+     * This controls whether the Storm UI and Logviewer REST APIs wrap their response in the
+     * JSONP callback named by the "callback" query parameter. It is disabled by default, since
+     * a JSONP response can be read by any page that is able to include it with a script tag.
+     */
+    @IsBoolean
+    public static final String UI_ENABLE_JSONP = "ui.enable.jsonp";
 
     /**
      * This controls wheather Storm Logviewer should bind to http port even if logviewer.port is > 0.
@@ -510,13 +560,13 @@ public class DaemonConfig implements Validated {
     public static final String LOGVIEWER_APPENDER_NAME = "logviewer.appender.name";
 
     /**
-     * A class implementing javax.servlet.Filter for authenticating/filtering Logviewer requests.
+     * A class implementing jakarta.servlet.Filter for authenticating/filtering Logviewer requests.
      */
     @IsString
     public static final String LOGVIEWER_FILTER = "logviewer.filter";
 
     /**
-     * Initialization parameters for the javax.servlet.Filter for Logviewer.
+     * Initialization parameters for the jakarta.servlet.Filter for Logviewer.
      */
     @IsMapEntryType(keyType = String.class, valueType = String.class)
     public static final String LOGVIEWER_FILTER_PARAMS = "logviewer.filter.params";
@@ -528,13 +578,13 @@ public class DaemonConfig implements Validated {
     public static final String UI_CHILDOPTS = "ui.childopts";
 
     /**
-     * A class implementing javax.servlet.Filter for authenticating/filtering UI requests.
+     * A class implementing jakarta.servlet.Filter for authenticating/filtering UI requests.
      */
     @IsString
     public static final String UI_FILTER = "ui.filter";
 
     /**
-     * Initialization parameters for the javax.servlet.Filter for UI.
+     * Initialization parameters for the jakarta.servlet.Filter for UI.
      */
     @IsMapEntryType(keyType = String.class, valueType = String.class)
     public static final String UI_FILTER_PARAMS = "ui.filter.params";
@@ -620,15 +670,23 @@ public class DaemonConfig implements Validated {
     /**
      * The maximum number of threads that should be used by the Pacemaker. When Pacemaker gets loaded it will spawn new threads, up to this
      * many total, to handle the load.
+     *
+     * @deprecated Pacemaker is deprecated and only kept for backward compatibility; it will be removed in a future release.
+     *     Use the default heartbeat path (workers heartbeat to their supervisor, which reports them to Nimbus) instead.
      */
     @IsNumber
     @IsPositiveNumber
+    @Deprecated(since = "3.1.0", forRemoval = true)
     public static final String PACEMAKER_MAX_THREADS = "pacemaker.max.threads";
 
     /**
      * This parameter is used by the storm-deploy project to configure the jvm options for the pacemaker daemon.
+     *
+     * @deprecated Pacemaker is deprecated and only kept for backward compatibility; it will be removed in a future release.
+     *     Use the default heartbeat path (workers heartbeat to their supervisor, which reports them to Nimbus) instead.
      */
     @IsStringOrStringList
+    @Deprecated(since = "3.1.0", forRemoval = true)
     public static final String PACEMAKER_CHILDOPTS = "pacemaker.childopts";
 
 
@@ -826,13 +884,13 @@ public class DaemonConfig implements Validated {
     public static final String NIMBUS_SLOTS_PER_TOPOLOGY = "nimbus.slots.perTopology";
 
     /**
-     * A class implementing javax.servlet.Filter for DRPC HTTP requests.
+     * A class implementing jakarta.servlet.Filter for DRPC HTTP requests.
      */
     @IsString
     public static final String DRPC_HTTP_FILTER = "drpc.http.filter";
 
     /**
-     * Initialization parameters for the javax.servlet.Filter of the DRPC HTTP service.
+     * Initialization parameters for the jakarta.servlet.Filter of the DRPC HTTP service.
      */
     @IsMapEntryType(keyType = String.class, valueType = String.class)
     public static final String DRPC_HTTP_FILTER_PARAMS = "drpc.http.filter.params";
@@ -1035,7 +1093,7 @@ public class DaemonConfig implements Validated {
     @IsImplementationOfClass(implementsClass = ResourceIsolationInterface.class)
     public static final String STORM_RESOURCE_ISOLATION_PLUGIN = "storm.resource.isolation.plugin";
 
-    /**
+    /*
      * CGroup Setting below.
      */
 

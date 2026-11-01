@@ -14,8 +14,6 @@ package org.apache.storm.messaging.netty;
 
 import java.io.IOException;
 import java.security.Principal;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.TreeMap;
 import javax.security.auth.Subject;
@@ -28,6 +26,7 @@ import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 import javax.security.sasl.SaslException;
 import org.apache.storm.security.auth.ClientAuthUtils;
+import org.apache.storm.security.auth.SubjectCompat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,10 +36,11 @@ import org.slf4j.LoggerFactory;
 public class KerberosSaslNettyClient {
 
     private static final Logger LOG = LoggerFactory
-        .getLogger(KerberosSaslNettyClient.class);
+            .getLogger(KerberosSaslNettyClient.class);
 
     /**
-     * Used to respond to server's counterpart, SaslServer with SASL tokens represented as byte arrays.
+     * Used to respond to server's counterpart, SaslServer with SASL tokens represented as byte
+     * arrays.
      */
     private SaslClient saslClient;
     private Subject subject;
@@ -51,7 +51,7 @@ public class KerberosSaslNettyClient {
      */
     public KerberosSaslNettyClient(Map<String, Object> topoConf, String jaasSection, String host) {
         LOG.debug("KerberosSaslNettyClient: Creating SASL {} client to authenticate to server ",
-                  SaslUtils.KERBEROS);
+                SaslUtils.KERBEROS);
 
         LOG.info("Creating Kerberos Client.");
         LOG.debug("KerberosSaslNettyClient: authmethod {}", SaslUtils.KERBEROS);
@@ -71,7 +71,7 @@ public class KerberosSaslNettyClient {
             throw new RuntimeException(ex);
         }
 
-        //check the credential of our principal
+        // check the credential of our principal
         if (subject.getPrivateCredentials(KerberosTicket.class).isEmpty()) {
             LOG.error("Failed to verify user principal.");
             throw new RuntimeException("Fail to verify user principal with section \""
@@ -95,28 +95,25 @@ public class KerberosSaslNettyClient {
             final String fServiceName = serviceName;
             final CallbackHandler fch = ch;
             LOG.debug("Kerberos Client with principal: {}, host: {}", fPrincipalName, fHost);
-            saslClient = Subject.doAs(subject, new PrivilegedExceptionAction<SaslClient>() {
-                @Override
-                public SaslClient run() {
-                    try {
-                        Map<String, String> props = new TreeMap<String, String>();
-                        props.put(Sasl.QOP, "auth");
-                        props.put(Sasl.SERVER_AUTH, "false");
-                        return Sasl.createSaslClient(
-                            new String[]{ SaslUtils.KERBEROS },
+            saslClient = SubjectCompat.doAs(subject, () -> {
+                try {
+                    Map<String, String> props = new TreeMap<String, String>();
+                    props.put(Sasl.QOP, "auth");
+                    props.put(Sasl.SERVER_AUTH, "false");
+                    return Sasl.createSaslClient(
+                            new String[] {SaslUtils.KERBEROS},
                             fPrincipalName,
                             fServiceName,
                             fHost,
                             props, fch);
-                    } catch (Exception e) {
-                        LOG.error("Subject failed to create sasl client.", e);
-                        return null;
-                    }
+                } catch (Exception e) {
+                    LOG.error("Subject failed to create sasl client.", e);
+                    return null;
                 }
             });
             LOG.info("Got Client: {}", saslClient);
 
-        } catch (PrivilegedActionException e) {
+        } catch (Exception e) {
             LOG.error("KerberosSaslNettyClient: Could not create Sasl Netty Client.");
             throw new RuntimeException(e);
         }
@@ -134,37 +131,33 @@ public class KerberosSaslNettyClient {
      */
     public byte[] saslResponse(SaslMessageToken saslTokenMessage) {
         try {
-            final SaslMessageToken fSaslTokenMessage = saslTokenMessage;
-            byte[] retval = Subject.doAs(subject, new PrivilegedExceptionAction<byte[]>() {
-                @Override
-                public byte[] run() {
-                    try {
-                        byte[] retval = saslClient.evaluateChallenge(fSaslTokenMessage
-                                                                         .getSaslToken());
-                        return retval;
-                    } catch (SaslException e) {
-                        LOG.error("saslResponse: Failed to respond to SASL server's token:",
-                                  e);
-                        throw new RuntimeException(e);
-                    }
+            return SubjectCompat.doAs(subject, () -> {
+                try {
+                    return saslClient.evaluateChallenge(saslTokenMessage.getSaslToken());
+                } catch (SaslException e) {
+                    LOG.error("saslResponse: Failed to respond to SASL server's token:", e);
+                    throw new RuntimeException(e);
                 }
             });
-            return retval;
-        } catch (PrivilegedActionException e) {
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
             LOG.error("Failed to generate response for token: ", e);
             throw new RuntimeException(e);
         }
     }
 
     /**
-     * Implementation of javax.security.auth.callback.CallbackHandler that works with Storm topology tokens.
+     * Implementation of javax.security.auth.callback.CallbackHandler that works with Storm topology
+     * tokens.
      */
     private static class SaslClientCallbackHandler implements CallbackHandler {
 
         /**
          * Implementation used to respond to SASL tokens from server.
          *
-         * @param callbacks objects that indicate what credential information the server's SaslServer requires from the client.
+         * @param callbacks objects that indicate what credential information the server's
+         *     SaslServer requires from the client.
          */
         @Override
         public void handle(Callback[] callbacks) throws UnsupportedCallbackException {

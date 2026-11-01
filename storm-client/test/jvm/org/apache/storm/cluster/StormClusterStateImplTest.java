@@ -16,7 +16,7 @@ import org.apache.storm.assignments.LocalAssignmentsBackendFactory;
 import org.apache.storm.callback.ZKStateChangedCallback;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Matchers;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 public class StormClusterStateImplTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(StormClusterStateImplTest.class);
-    private final String[] pathlist = {
+    private final String[] pathlist =  {
         ClusterUtils.ASSIGNMENTS_SUBTREE,
         ClusterUtils.STORMS_SUBTREE,
         ClusterUtils.SUPERVISORS_SUBTREE,
@@ -43,13 +43,13 @@ public class StormClusterStateImplTest {
     public void init() throws Exception {
         storage = Mockito.mock(IStateStorage.class);
         context = new ClusterStateContext();
-        state = new StormClusterStateImpl(storage, LocalAssignmentsBackendFactory.getDefault(), context, false /*solo*/);
+        state = new StormClusterStateImpl(storage, LocalAssignmentsBackendFactory.getDefault(),
+                context, false /*solo*/);
     }
-
 
     @Test
     public void registeredCallback() {
-        Mockito.verify(storage).register(Matchers.<ZKStateChangedCallback>anyObject());
+        Mockito.verify(storage).register(ArgumentMatchers.any(ZKStateChangedCallback.class));
     }
 
     @Test

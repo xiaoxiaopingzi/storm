@@ -14,8 +14,8 @@ package org.apache.storm.executor;
 
 import java.io.Serializable;
 import java.util.List;
-import org.apache.storm.shade.org.apache.commons.lang.builder.ToStringBuilder;
-import org.apache.storm.shade.org.apache.commons.lang.builder.ToStringStyle;
+import org.apache.storm.shade.org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.storm.shade.org.apache.commons.lang3.builder.ToStringStyle;
 
 public class TupleInfo implements Serializable {
 
@@ -27,6 +27,8 @@ public class TupleInfo implements Serializable {
     private List<Object> values;
     private long timestamp;
     private long rootId;
+    private transient Object traceContext;
+    private long traceEmitTimeMs;
 
     public Object getMessageId() {
         return messageId;
@@ -63,7 +65,7 @@ public class TupleInfo implements Serializable {
     @Override
     public String toString() {
         return ToStringBuilder.reflectionToString(this,
-                                                  ToStringStyle.SHORT_PREFIX_STYLE);
+                ToStringStyle.SHORT_PREFIX_STYLE);
     }
 
     public long getRootId() {
@@ -72,6 +74,25 @@ public class TupleInfo implements Serializable {
 
     public void setRootId(long rootId) {
         this.rootId = rootId;
+    }
+
+    public Object getTraceContext() {
+        return traceContext;
+    }
+
+    public void setTraceContext(Object traceContext) {
+        this.traceContext = traceContext;
+    }
+
+    /**
+     * Returns when the spout emitted the tuple tree, set for traced trees only.
+     */
+    public long getTraceEmitTimeMs() {
+        return traceEmitTimeMs;
+    }
+
+    public void setTraceEmitTimeMs(long traceEmitTimeMs) {
+        this.traceEmitTimeMs = traceEmitTimeMs;
     }
 
     public int getTaskId() {
@@ -88,5 +109,7 @@ public class TupleInfo implements Serializable {
         values = null;
         timestamp = 0;
         rootId = 0;
+        traceContext = null;
+        traceEmitTimeMs = 0;
     }
 }

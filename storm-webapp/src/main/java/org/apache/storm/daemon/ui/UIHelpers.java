@@ -18,11 +18,14 @@
 
 package org.apache.storm.daemon.ui;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.Servlet;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.SecurityContext;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -40,10 +43,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import javax.servlet.DispatcherType;
-import javax.servlet.Servlet;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.SecurityContext;
+import net.minidev.json.JSONValue;
 import org.apache.storm.Config;
 import org.apache.storm.Constants;
 import org.apache.storm.DaemonConfig;
@@ -90,6 +90,7 @@ import org.apache.storm.logging.filters.AccessLoggingFilter;
 import org.apache.storm.scheduler.resource.normalization.NormalizedResourceRequest;
 import org.apache.storm.stats.StatsUtil;
 import org.apache.storm.thrift.TException;
+import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.IVersionInfo;
 import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.Time;
@@ -97,6 +98,10 @@ import org.apache.storm.utils.TopologySpoutLag;
 import org.apache.storm.utils.Utils;
 import org.apache.storm.utils.VersionInfo;
 import org.apache.storm.utils.WebAppUtils;
+import org.eclipse.jetty.ee10.servlet.FilterHolder;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
+import org.eclipse.jetty.ee10.servlets.CrossOriginFilter;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.HttpVersion;
 import org.eclipse.jetty.server.HttpConfiguration;
@@ -105,12 +110,8 @@ import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.SslConnectionFactory;
-import org.eclipse.jetty.servlet.FilterHolder;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
-import org.eclipse.jetty.servlets.CrossOriginFilter;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
-import org.json.simple.JSONValue;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -232,9 +233,10 @@ public class UIHelpers {
                                                   String tsPassword, String tsType,
                                                   Boolean needClientAuth, Boolean wantClientAuth,
                                                   Integer headerBufferSize, boolean enableSslReload) {
-        SslContextFactory factory = new ReloadableSslContextFactory(enableSslReload);
-        factory.setExcludeCipherSuites("SSL_RSA_WITH_RC4_128_MD5", "SSL_RSA_WITH_RC4_128_SHA");
-        factory.setExcludeProtocols("SSLv3");
+        SslContextFactory.Server factory = new ReloadableSslContextFactory(enableSslReload);
+        // add to, rather than replace, the exclusions Jetty's SslContextFactory ships with
+        factory.addExcludeCipherSuites("SSL_RSA_WITH_RC4_128_MD5", "SSL_RSA_WITH_RC4_128_SHA");
+        factory.addExcludeProtocols("SSLv3");
         factory.setRenegotiationAllowed(false);
         factory.setKeyStorePath(ksPath);
         factory.setKeyStoreType(ksType);
@@ -317,12 +319,12 @@ public class UIHelpers {
     public static FilterHolder corsFilterHandle() {
         FilterHolder filterHolder = new FilterHolder(new CrossOriginFilter());
         filterHolder.setInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM, "*");
-        filterHolder.setInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM, "GET, POST, PUT");
+        filterHolder.setInitParameter(CrossOriginFilter.ALLOWED_METHODS_PARAM, "GET, POST, PUT");
         filterHolder.setInitParameter(
-                CrossOriginFilter.ALLOWED_ORIGINS_PARAM,
+                CrossOriginFilter.ALLOWED_HEADERS_PARAM,
                 "X-Requested-With, X-Requested-By, Access-Control-Allow-Origin,"
                         + " Content-Type, Content-Length, Accept, Origin");
-        filterHolder.setInitParameter(CrossOriginFilter.ACCESS_CONTROL_ALLOW_ORIGIN_HEADER, "*");
+        filterHolder.setInitParameter(CrossOriginFilter.ALLOW_CREDENTIALS_PARAM, "false");
         return filterHolder;
     }
 
@@ -356,7 +358,7 @@ public class UIHelpers {
             if (params != null) {
                 servletHolder.setInitParameters(params);
             }
-            ServletContextHandler context = new ServletContextHandler(server, "/");
+            ServletContextHandler context = new ServletContextHandler("/");
             context.addServlet(servletHolder, "/");
             configFilters(context, filtersConfs);
             server.setHandler(context);
@@ -445,9 +447,40 @@ public class UIHelpers {
         stormRunJetty(port, null, null, headerBufferSize, configurator);
     }
 
+    private static final Pattern JSONP_CALLBACK_PATTERN =
+            Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*$");
+
+    /**
+     * Whether the "callback" query parameter is honored, see {@link DaemonConfig#UI_ENABLE_JSONP}.
+     * It is read once, like the rest of the daemon configuration, so a change needs a restart.
+     */
+    private static boolean jsonpEnabled =
+            ObjectReader.getBoolean(ConfigUtils.readStormConfig().get(DaemonConfig.UI_ENABLE_JSONP), false);
+
+    @VisibleForTesting
+    static void setJsonpEnabled(boolean enabled) {
+        jsonpEnabled = enabled;
+    }
+
+    private static String sanitizeJsonpCallback(String callback) {
+        if (callback == null) {
+            return null;
+        }
+        if (!jsonpEnabled) {
+            LOG.warn("Ignoring JSONP callback parameter, set {} to true to enable JSONP responses",
+                     DaemonConfig.UI_ENABLE_JSONP);
+            return null;
+        }
+        if (callback.length() > 128 || !JSONP_CALLBACK_PATTERN.matcher(callback).matches()) {
+            LOG.warn("Ignoring invalid JSONP callback parameter");
+            return null;
+        }
+        return callback;
+    }
+
     /**
      * wrapJsonInCallback.
-     * @param callback callbackParameterName
+     * @param callback callbackParameterName (must already be validated)
      * @param response response
      * @return wrapJsonInCallback
      */
@@ -462,6 +495,7 @@ public class UIHelpers {
      * @return getJsonResponseHeaders
      */
     public static Map getJsonResponseHeaders(String callback, Map headers) {
+        final String safeCallback = sanitizeJsonpCallback(callback);
         Map<String, String> headersResult = new HashMap<>();
         headersResult.put("Cache-Control", "no-cache, no-store");
         headersResult.put("Access-Control-Allow-Origin", "*");
@@ -470,7 +504,8 @@ public class UIHelpers {
                                   + "Access-Controler-Allow-Origin, "
                                   + "X-Requested-By, X-Csrf-Token, "
                                   + "Authorization, X-Requested-With");
-        if (callback != null) {
+        headersResult.put("X-Content-Type-Options", "nosniff");
+        if (safeCallback != null) {
             headersResult.put("Content-Type", "application/javascript;charset=utf-8");
         } else {
             headersResult.put("Content-Type", "application/json;charset=utf-8");
@@ -482,8 +517,9 @@ public class UIHelpers {
     }
 
     public static String getJsonResponseBody(Object data, String callback, boolean needSerialize) {
+        String safeCallback = sanitizeJsonpCallback(callback);
         String serializedData = needSerialize ? JSONValue.toJSONString(data) : (String) data;
-        return callback != null ? wrapJsonInCallback(callback, serializedData) : serializedData;
+        return safeCallback != null ? wrapJsonInCallback(safeCallback, serializedData) : serializedData;
     }
 
     /**
@@ -493,13 +529,16 @@ public class UIHelpers {
      * @return Map to be converted into json.
      */
     public static Map exceptionToJson(Exception ex, int statusCode) {
-        StringWriter sw = new StringWriter();
-        ex.printStackTrace(new PrintWriter(sw));
+        LOG.error("HTTP {} error", statusCode, ex);
+        String message = ex.getMessage();
+        if (message == null || message.isEmpty()) {
+            message = ex.getClass().getName();
+        }
         return ImmutableMap.of(
                 "error", statusCode
                         + " "
                         + HttpStatus.getMessage(statusCode),
-                "errorMessage", sw.toString());
+                "errorMessage", message);
     }
 
     public static Response makeStandardResponse(Object data, String callback) {
@@ -522,7 +561,7 @@ public class UIHelpers {
         String body = getJsonResponseBody(data, callback, needsSerialization);
         Response.ResponseBuilder responseBuilder = Response.status(status).entity(body);
         Map<String, String> headers = getJsonResponseHeaders(callback, null);
-        for (Map.Entry<String, String> headerEntry: headers.entrySet()) {
+        for (Map.Entry<String, String> headerEntry : headers.entrySet()) {
             responseBuilder.header(headerEntry.getKey(), headerEntry.getValue());
         }
         return responseBuilder.build();
@@ -537,8 +576,6 @@ public class UIHelpers {
         ret.put("revision", info.getRevision());
         ret.put("branch", info.getBranch());
         ret.put("date", info.getDate());
-        ret.put("user", info.getUser());
-        ret.put("url", info.getUrl());
         ret.put("srcChecksum", info.getSrcChecksum());
         return ret;
     }
@@ -1150,7 +1187,7 @@ public class UIHelpers {
                                                          String window, Map<String, Object> config, String remoteUser) {
         Map<String, Object> result = new HashMap();
         Map<String, Object> topologyConf = (Map<String, Object>) JSONValue.parse(topologyPageInfo.get_topology_conf());
-        long messageTimeout = (long) topologyConf.get(Config.TOPOLOGY_MESSAGE_TIMEOUT_SECS);
+        int messageTimeout = (int) topologyConf.get(Config.TOPOLOGY_MESSAGE_TIMEOUT_SECS);
         Map<String, Object> unpackedTopologyPageInfo =
                 unpackTopologyInfo(topologyPageInfo, window, config);
         result.putAll(unpackedTopologyPageInfo);
@@ -2089,7 +2126,7 @@ public class UIHelpers {
         }
 
         result.put("user", user);
-        result.put("id" , component);
+        result.put("id", component);
         result.put("encodedId", Utils.urlEncodeUtf8(component));
         result.put("name", componentPageInfo.get_topology_name());
         result.put("executors", componentPageInfo.get_num_executors());
@@ -2290,7 +2327,7 @@ public class UIHelpers {
                                                                 String hostPort, String timeout,
                                                                 Map<String, Object> config) throws TException {
         setTopologyProfilingAction(
-                client, id , hostPort, System.currentTimeMillis() + (Long.valueOf(timeout) * 60_000),
+                client, id, hostPort, System.currentTimeMillis() + (Long.valueOf(timeout) * 60_000),
                 config, ProfileAction.JPROFILE_STOP);
         Map<String, Object> result = new HashMap();
         String host = hostPort.split(":")[0];
@@ -2314,7 +2351,7 @@ public class UIHelpers {
     public static Map<String, Object> getTopologyProfilingStop(Nimbus.Iface client, String id,
                                                                String hostPort,
                                                                Map<String, Object> config) throws TException {
-        setTopologyProfilingAction(client, id , hostPort, 0L, config, ProfileAction.JPROFILE_STOP);
+        setTopologyProfilingAction(client, id, hostPort, 0L, config, ProfileAction.JPROFILE_STOP);
         Map<String, Object> result = new HashMap();
         result.put("status", "ok");
         result.put("id", hostPort);
@@ -2344,7 +2381,7 @@ public class UIHelpers {
     public static Map<String, Object> getTopologyProfilingDump(Nimbus.Iface client, String id, String hostPort,
                                                                Map<String, Object> config) throws TException {
         setTopologyProfilingAction(
-                client, id , hostPort, System.currentTimeMillis(),
+                client, id, hostPort, System.currentTimeMillis(),
                 config, ProfileAction.JPROFILE_DUMP
         );
         Map<String, Object> result = new HashMap();
@@ -2357,7 +2394,7 @@ public class UIHelpers {
                                                                      String hostPort, Map<String,
                                                                      Object> config) throws TException {
         setTopologyProfilingAction(
-                client, id , hostPort, System.currentTimeMillis(), config, ProfileAction.JSTACK_DUMP
+                client, id, hostPort, System.currentTimeMillis(), config, ProfileAction.JSTACK_DUMP
         );
         Map<String, Object> result = new HashMap();
         result.put("status", "ok");
@@ -2378,7 +2415,7 @@ public class UIHelpers {
                                                                         String id, String hostPort,
                                                                         Map<String, Object> config) throws TException {
         setTopologyProfilingAction(
-                client, id , hostPort, System.currentTimeMillis(), config, ProfileAction.JVM_RESTART
+                client, id, hostPort, System.currentTimeMillis(), config, ProfileAction.JVM_RESTART
         );
         Map<String, Object> result = new HashMap();
         result.put("status", "ok");
@@ -2397,7 +2434,7 @@ public class UIHelpers {
      */
     public static Map<String, Object> getTopologyProfilingDumpHeap(Nimbus.Iface client, String id, String hostPort,
                                                                    Map<String, Object> config) throws TException {
-        setTopologyProfilingAction(client, id , hostPort, System.currentTimeMillis(), config, ProfileAction.JMAP_DUMP);
+        setTopologyProfilingAction(client, id, hostPort, System.currentTimeMillis(), config, ProfileAction.JMAP_DUMP);
         Map<String, Object> result = new HashMap();
         result.put("status", "ok");
         result.put("id", hostPort);
@@ -2418,7 +2455,7 @@ public class UIHelpers {
         for (Map.Entry<String, Map> entry : namedLoggerlevels.entrySet()) {
             String loggerNMame = entry.getKey();
             String targetLevel = (String) entry.getValue().get("target_level");
-            Long timeout = (Long) entry.getValue().get("timeout");
+            long timeout = ((Number) entry.getValue().get("timeout")).longValue();
             LogLevel logLevel = new LogLevel();
             if (targetLevel == null) {
                 logLevel.set_action(LogLevelAction.REMOVE);

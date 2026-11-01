@@ -76,15 +76,6 @@ public class NodeSorter implements INodeSorter {
     /**
      * Initialize for the default implementation node sorting.
      *
-     * <p>
-     *  <li>{@link BaseResourceAwareStrategy.NodeSortType#GENERIC_RAS} sorting implemented in
-     *  {@link #sortObjectResourcesGeneric(ObjectResourcesSummary, ExecutorDetails, NodeSorter.ExistingScheduleFunc)}</li>
-     *  <li>{@link BaseResourceAwareStrategy.NodeSortType#DEFAULT_RAS} sorting implemented in
-     *  {@link #sortObjectResourcesDefault(ObjectResourcesSummary, NodeSorter.ExistingScheduleFunc)}</li>
-     *  <li>{@link BaseResourceAwareStrategy.NodeSortType#COMMON} sorting implemented in
-     *  {@link #sortObjectResourcesCommon(ObjectResourcesSummary, ExecutorDetails, NodeSorter.ExistingScheduleFunc)}</li>
-     * </p>
-     *
      * @param cluster for which nodes will be sorted.
      * @param topologyDetails the topology to sort for.
      * @param nodeSortType type of sorting to be applied to object resource collection {@link BaseResourceAwareStrategy.NodeSortType}.
@@ -98,7 +89,7 @@ public class NodeSorter implements INodeSorter {
         networkTopography = cluster.getNetworkTopography();
         Map<String, String> hostToRack = cluster.getHostToRack();
         RasNodes nodes = new RasNodes(cluster);
-        for (RasNode node: nodes.getNodes()) {
+        for (RasNode node : nodes.getNodes()) {
             String superId = node.getId();
             String hostName = node.getHostname();
             if (!node.isAlive() || hostName == null) {
@@ -169,14 +160,15 @@ public class NodeSorter implements INodeSorter {
      *     above will be ranked after racks that have more balanced resource availability and nodes or racks that have
      *     resources that are not requested will be ranked below . So we will be less likely to pick a rack that
      *     have a lot of one resource but a low amount of another and have a lot of resources that are not requested by the executor.
-     *     This is similar to logic used {@link #sortObjectResourcesGeneric(ObjectResourcesSummary, ExecutorDetails, ExistingScheduleFunc)}.
+     *     This is similar to logic used in
+     *     {@link NodeSorter#sortObjectResourcesGeneric(ObjectResourcesSummary, ExecutorDetails, ExistingScheduleFunc)}.
      * </li>
      *
      * <li>
      *     The tie between two nodes with same resource availability is broken by using the node with lower minimum
      *     percentage used. This comparison was used in {@link #sortObjectResourcesDefault(ObjectResourcesSummary, ExistingScheduleFunc)}
      *     but here it is made subservient to modified resource availbility used in
-     *     {@link #sortObjectResourcesGeneric(ObjectResourcesSummary, ExecutorDetails, ExistingScheduleFunc)}.
+     *     {@code #sortObjectResourcesGeneric(ObjectResourcesSummary, ExecutorDetails, ExistingScheduleFunc)}.
      *
      * </li>
      *
@@ -258,6 +250,7 @@ public class NodeSorter implements INodeSorter {
      * @param exec                 executor for which the sorting is done
      * @param existingScheduleFunc a function to get existing executors already scheduled on this object
      * @return a sorted list of ObjectResources
+     * @deprecated used by GenericResourceAwareStrategyOld only; use COMMON node sorting instead.
      */
     @Deprecated
     private List<ObjectResourcesItem> sortObjectResourcesGeneric(
@@ -310,6 +303,7 @@ public class NodeSorter implements INodeSorter {
      * @param allResources         contains all individual ObjectResources as well as cumulative stats
      * @param existingScheduleFunc a function to get existing executors already scheduled on this object
      * @return a sorted list of ObjectResources
+     * @deprecated used by DefaultResourceAwareStrategyOld only; use COMMON node sorting instead.
      */
     @Deprecated
     private List<ObjectResourcesItem> sortObjectResourcesDefault(
@@ -365,7 +359,7 @@ public class NodeSorter implements INodeSorter {
      * <p>2) the subordinate/subservient resource availability percentage of a node in descending
      * order We calculate the resource availability percentage by dividing the resource availability that have exhausted or little of one of
      * the resources mentioned above will be ranked after on the node by the resource availability of the entire rack By doing this
-     * calculation, nodes nodes that have more balanced resource availability. So we will be less likely to pick a node that have a lot of
+     * calculation, nodes that have more balanced resource availability. So we will be less likely to pick a node that have a lot of
      * one resource but a low amount of another.
      *
      * @param availRasNodes a list of all the nodes we want to sort
@@ -405,7 +399,7 @@ public class NodeSorter implements INodeSorter {
             return Collections.emptyList();
         }
         List<String> ret = new ArrayList<>(hosts.size());
-        for (String host: hosts) {
+        for (String host : hosts) {
             List<RasNode> nodes = hostnameToNodes.get(host);
             if (nodes != null) {
                 for (RasNode node : nodes) {

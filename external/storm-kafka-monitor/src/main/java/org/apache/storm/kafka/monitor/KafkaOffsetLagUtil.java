@@ -19,11 +19,13 @@
 package org.apache.storm.kafka.monitor;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+
+import net.minidev.json.JSONValue;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -34,7 +36,6 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Utils;
-import org.json.simple.JSONValue;
 
 /**
  * Utility class for querying offset lag for kafka spout.
@@ -48,6 +49,8 @@ public class KafkaOffsetLagUtil {
     private static final String OPTION_GROUP_ID_LONG = "groupid";
     private static final String OPTION_SECURITY_PROTOCOL_SHORT = "s";
     private static final String OPTION_SECURITY_PROTOCOL_LONG = "security-protocol";
+    private static final String OPTION_SASL_MECHANISM_SHORT = "m";
+    private static final String OPTION_SASL_MECHANISM_LONG = "sasl-mechanism";
     private static final String OPTION_CONSUMER_CONFIG_SHORT = "c";
     private static final String OPTION_CONSUMER_CONFIG_LONG = "consumer-config";
 
@@ -60,13 +63,14 @@ public class KafkaOffsetLagUtil {
                 printUsageAndExit(options, OPTION_TOPIC_LONG + " is required");
             }
             String securityProtocol = commandLine.getOptionValue(OPTION_SECURITY_PROTOCOL_LONG);
+            String saslMechanism = commandLine.getOptionValue(OPTION_SASL_MECHANISM_LONG);
             if (!commandLine.hasOption(OPTION_GROUP_ID_LONG) || !commandLine.hasOption(OPTION_BOOTSTRAP_BROKERS_LONG)) {
                 printUsageAndExit(options, OPTION_GROUP_ID_LONG + " and " + OPTION_BOOTSTRAP_BROKERS_LONG + " are required");
             }
             NewKafkaSpoutOffsetQuery newKafkaSpoutOffsetQuery =
                 new NewKafkaSpoutOffsetQuery(commandLine.getOptionValue(OPTION_TOPIC_LONG),
                     commandLine.getOptionValue(OPTION_BOOTSTRAP_BROKERS_LONG),
-                    commandLine.getOptionValue(OPTION_GROUP_ID_LONG), securityProtocol,
+                    commandLine.getOptionValue(OPTION_GROUP_ID_LONG), securityProtocol, saslMechanism,
                     commandLine.getOptionValue(OPTION_CONSUMER_CONFIG_LONG));
             List<KafkaOffsetLagResult> results = getOffsetLags(newKafkaSpoutOffsetQuery);
 
@@ -119,6 +123,10 @@ public class KafkaOffsetLagUtil {
                 OPTION_SECURITY_PROTOCOL_LONG,
                 true,
                 "Security protocol to connect to kafka");
+        options.addOption(OPTION_SASL_MECHANISM_SHORT,
+                OPTION_SASL_MECHANISM_LONG,
+                true,
+                "Sasl mechanism to connect to kafka, default is GSSAPI");
         options.addOption(OPTION_CONSUMER_CONFIG_SHORT,
                 OPTION_CONSUMER_CONFIG_LONG,
                 true,
@@ -145,6 +153,9 @@ public class KafkaOffsetLagUtil {
             if (newKafkaSpoutOffsetQuery.getSecurityProtocol() != null) {
                 props.put("security.protocol", newKafkaSpoutOffsetQuery.getSecurityProtocol());
             }
+            if (newKafkaSpoutOffsetQuery.getSaslMechanism() != null) {
+                props.put("sasl.mechanism", newKafkaSpoutOffsetQuery.getSaslMechanism());
+            }
             // Read property file for extra consumer properties
             if (newKafkaSpoutOffsetQuery.getConsumerPropertiesFileName() != null) {
                 props.putAll(Utils.loadProps(newKafkaSpoutOffsetQuery.getConsumerPropertiesFileName()));
@@ -160,12 +171,13 @@ public class KafkaOffsetLagUtil {
                 }
             }
             consumer.assign(topicPartitionList);
+            Map<TopicPartition, OffsetAndMetadata> committedOffsets = consumer.committed(new HashSet<>(topicPartitionList));
+            consumer.seekToEnd(topicPartitionList);
             for (TopicPartition topicPartition : topicPartitionList) {
-                OffsetAndMetadata offsetAndMetadata = consumer.committed(topicPartition);
-                long committedOffset = offsetAndMetadata != null ? offsetAndMetadata.offset() : -1;
-                consumer.seekToEnd(toArrayList(topicPartition));
+                OffsetAndMetadata partitionOffset = committedOffsets.get(topicPartition);
+                long committedOffset = partitionOffset != null ? partitionOffset.offset() : -1;
                 result.add(new KafkaOffsetLagResult(topicPartition.topic(), topicPartition.partition(), committedOffset,
-                                                    consumer.position(topicPartition)));
+                        consumer.position(topicPartition)));
             }
         } finally {
             if (consumer != null) {
@@ -173,14 +185,6 @@ public class KafkaOffsetLagUtil {
             }
         }
         return result;
-    }
-
-    private static Collection<TopicPartition> toArrayList(final TopicPartition tp) {
-        return new ArrayList<TopicPartition>(1) {
-            {
-                add(tp);
-            }
-        };
     }
 
 }

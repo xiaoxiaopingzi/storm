@@ -18,16 +18,35 @@
 
 package org.apache.storm.state;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Output;
+import com.esotericsoftware.kryo.util.DefaultInstantiatorStrategy;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import org.apache.storm.Config;
 import org.apache.storm.spout.CheckPointState;
+import org.apache.storm.task.TopologyContext;
+import org.apache.storm.testing.TestWordSpout;
+import org.apache.storm.topology.TopologyBuilder;
+import org.apache.storm.tuple.MessageId;
+import org.apache.storm.tuple.TupleImpl;
+import org.apache.storm.tuple.Values;
+import org.apache.storm.utils.Utils;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.objenesis.strategy.StdInstantiatorStrategy;
 
 /**
- * Unit tests for {@link DefaultStateSerializer}
+ * Unit tests for {@link DefaultStateSerializer}.
  */
 public class DefaultStateSerializerTest {
 
@@ -39,16 +58,152 @@ public class DefaultStateSerializerTest {
         bytes = s1.serialize(val);
         assertEquals(val, (long) s1.deserialize(bytes));
 
-        Serializer<CheckPointState> s2 = new DefaultStateSerializer<>();
         CheckPointState cs = new CheckPointState(100, CheckPointState.State.COMMITTED);
+
+        Serializer<CheckPointState> s2 = new DefaultStateSerializer<>();
         bytes = s2.serialize(cs);
         assertEquals(cs, s2.deserialize(bytes));
 
         List<Class<?>> classesToRegister = new ArrayList<>();
         classesToRegister.add(CheckPointState.class);
-        Serializer<CheckPointState> s3 = new DefaultStateSerializer<>(Collections.emptyMap(), null, classesToRegister);
-        bytes = s2.serialize(cs);
-        assertEquals(cs, s2.deserialize(bytes));
+        classesToRegister.add(CheckPointState.State.class);
+        Serializer<CheckPointState> s3 = new DefaultStateSerializer<>(Collections.emptyMap(), null,
+                classesToRegister);
+        bytes = s3.serialize(cs);
+        assertEquals(cs, s3.deserialize(bytes));
 
+    }
+
+    /**
+     * The encoder wraps every value as Optional&lt;byte[]&gt;, so byte[] must round-trip even
+     * though
+     * no caller registers it explicitly.
+     */
+    @Test
+    public void testDefaultStateEncoderRoundTrip() {
+        DefaultStateEncoder<String, byte[]> encoder =
+                new DefaultStateEncoder<>(new DefaultStateSerializer<>(),
+                new DefaultStateSerializer<>());
+        byte[] value = new byte[] {1, 2, 3};
+
+        assertEquals("k", encoder.decodeKey(encoder.encodeKey("k")));
+        assertArrayEquals(value, encoder.decodeValue(encoder.encodeValue(value)));
+        // the tombstone is produced by the same static serializer at class-init time
+        assertNull(encoder.decodeValue(encoder.getTombstoneValue()));
+    }
+
+    @Test
+    public void testTupleRestoredFromStateCarriesNoTraceContext() {
+        TopologyBuilder builder = new TopologyBuilder();
+        builder.setSpout("spout", new TestWordSpout(), 1);
+        TopologyContext context = mock(TopologyContext.class);
+        when(context.getRawTopology()).thenReturn(builder.createTopology());
+        when(context.getComponentId(1)).thenReturn("spout");
+        Serializer<TupleImpl> serializer = new DefaultStateSerializer<>(Utils.readStormConfig(), context);
+        TupleImpl tuple = new TupleImpl(context, new Values("hello"), "spout", 1, Utils.DEFAULT_STREAM_ID,
+            MessageId.makeUnanchored());
+        tuple.setTraceContext("trace-1");
+
+        TupleImpl restored = serializer.deserialize(serializer.serialize(tuple));
+        assertEquals(tuple.getValues(), restored.getValues());
+        assertNull(restored.getTraceContext());
+    }
+
+    @Test
+    public void testDeserializeRejectsUnregisteredClasses() {
+        // a Kryo stream naming a class the topology never registered, as an earlier release
+        // or an unrelated writer could have left in the store
+        Kryo permissive = new Kryo();
+        permissive.setRegistrationRequired(false);
+        permissive
+                .setInstantiatorStrategy(new DefaultInstantiatorStrategy(new StdInstantiatorStrategy()));
+        Output out = new Output(4096);
+        permissive.writeClassAndObject(out, new UnregisteredPojo());
+        byte[] unregisteredClassBytes = out.toBytes();
+
+        Serializer<Object> serializer = new DefaultStateSerializer<>();
+        assertThrows(IllegalArgumentException.class, () -> serializer
+                .deserialize(unregisteredClassBytes));
+    }
+
+    @Test
+    public void testSerializeRejectsUnregisteredClasses() {
+        Serializer<Object> serializer = new DefaultStateSerializer<>();
+        assertThrows(IllegalArgumentException.class, () -> serializer
+                .serialize(new UnregisteredPojo()));
+    }
+
+    @Test
+    public void testFallBackOnJavaSerializationAllowsUnregisteredClasses() {
+        Map<String, Object> topoConf = new HashMap<>();
+        topoConf.put(Config.TOPOLOGY_FALL_BACK_ON_JAVA_SERIALIZATION, true);
+        Serializer<Object> serializer = new DefaultStateSerializer<>(topoConf, null);
+        byte[] bytes = serializer.serialize(new UnregisteredPojo());
+        assertEquals(UnregisteredPojo.class, serializer.deserialize(bytes).getClass());
+    }
+
+    public static class UnregisteredPojo {
+        private long value;
+    }
+
+    /**
+     * Replica of the serializer as it behaved before registration was required: unregistered
+     * classes
+     * are written by name. State persisted by earlier releases is in this format.
+     */
+    private static Kryo legacyKryo() {
+        Kryo k = new Kryo();
+        k.setRegistrationRequired(false);
+        org.apache.storm.serialization.SerializationFactory.register(
+                k, Collections.singletonList(java.util.Optional.class.getName()));
+        k.setInstantiatorStrategy(new DefaultInstantiatorStrategy(new StdInstantiatorStrategy()));
+        return k;
+    }
+
+    private static byte[] legacyWrite(Object obj) {
+        Output out = new Output(4096);
+        legacyKryo().writeClassAndObject(out, obj);
+        out.flush();
+        return out.toBytes();
+    }
+
+    /** Exactly what the pre-registration DefaultStateEncoder.encodeValue produced. */
+    private static byte[] legacyEncodeValue(Object value) {
+        return legacyWrite(java.util.Optional.of(legacyWrite(value)));
+    }
+
+    /**
+     * State written before registration was required is name-encoded. Kryo skips the class name for
+     * a name id it has already seen, so without clearing that cache between operations the second
+     * such read desynchronises from the stream.
+     */
+    @Test
+    public void testSequentialReadsOfLegacyEncodedState() {
+        DefaultStateEncoder<String, Object> encoder =
+                new DefaultStateEncoder<>(new DefaultStateSerializer<>(),
+                new DefaultStateSerializer<>());
+
+        assertEquals("first", encoder.decodeValue(legacyEncodeValue("first")));
+        assertEquals("second", encoder.decodeValue(legacyEncodeValue("second")));
+        assertEquals("third", encoder.decodeValue(legacyEncodeValue("third")));
+    }
+
+    /**
+     * A rejected payload must not affect later reads. The serializers are shared, so a failure that
+     * left the class resolver dirty would let one planted value deny service to the rest.
+     */
+    @Test
+    public void testRejectedPayloadDoesNotBreakLaterReads() {
+        DefaultStateEncoder<String, Object> encoder =
+                new DefaultStateEncoder<>(new DefaultStateSerializer<>(),
+                new DefaultStateSerializer<>());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> encoder.decodeValue(legacyWrite(new UnregisteredPojo())));
+
+        // a legitimate value, in both the current and the legacy encoding
+        assertEquals("still-works", encoder.decodeValue(encoder.encodeValue("still-works")));
+        assertEquals("legacy-still-works", encoder
+                .decodeValue(legacyEncodeValue("legacy-still-works")));
     }
 }

@@ -21,13 +21,15 @@ package org.apache.storm.daemon.ui;
 import static org.apache.storm.utils.ConfigUtils.FILE_SEPARATOR;
 import static org.apache.storm.utils.ConfigUtils.STORM_HOME;
 
+import jakarta.servlet.DispatcherType;
+
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
-import javax.servlet.DispatcherType;
+
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.daemon.drpc.webapp.ReqContextFilter;
 import org.apache.storm.daemon.ui.exceptionmappers.AuthorizationExceptionMapper;
@@ -42,11 +44,11 @@ import org.apache.storm.security.auth.ServerAuthUtils;
 import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.Utils;
+import org.eclipse.jetty.ee10.servlet.DefaultServlet;
+import org.eclipse.jetty.ee10.servlet.FilterHolder;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.DefaultServlet;
-import org.eclipse.jetty.servlet.FilterHolder;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.glassfish.jersey.servlet.ServletContainer;
@@ -162,7 +164,7 @@ public class UIServer {
             }
         }
 
-        holderHome.setInitParameter("dirAllowed", "true");
+        holderHome.setInitParameter("dirAllowed", "false");
         holderHome.setInitParameter("pathInfoOnly", "true");
         context.addFilter(new FilterHolder(new HeaderResponseServletFilter(metricsRegistry)), "/*", EnumSet.allOf(DispatcherType.class));
         context.addServlet(holderHome, "/*");
@@ -170,7 +172,7 @@ public class UIServer {
 
         // Lastly, the default servlet for root content (always needed, to satisfy servlet spec)
         ServletHolder holderPwd = new ServletHolder("default", DefaultServlet.class);
-        holderPwd.setInitParameter("dirAllowed", "true");
+        holderPwd.setInitParameter("dirAllowed", "false");
         context.addServlet(holderPwd, "/");
 
         metricsRegistry.startMetricsReporters(conf);

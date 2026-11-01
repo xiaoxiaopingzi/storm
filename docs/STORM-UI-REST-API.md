@@ -13,6 +13,7 @@ metrics data and configuration information as well as management operations such
 
 The REST API returns JSON responses and supports JSONP.
 Clients can pass a callback query parameter to wrap JSON in the callback function.
+JSONP is disabled by default; the callback parameter is ignored unless `ui.enable.jsonp` is set to true.
 
 
 # Using the UI REST API
@@ -246,7 +247,7 @@ Response fields:
 |Field  |Value|Description|
 |---	|---	|---
 |supervisors| Array| Array of supervisor summaries|
-|workers| Array| Array of worker summaries |
+|workers| Array| Array of worker summaries, limited to topologies the caller is allowed to read |
 |schedulerDisplayResource| Boolean | Whether to display scheduler resource information|
 
 Each supervisor is defined by:
@@ -1157,7 +1158,7 @@ Sample response:
                         "errorPort": 6701,
                         "errorWorkerLogLink": "http://10.11.1.7:8000/log?file=worker-6701.log",
                         "errorLapsedSecs": 16,
-                        "error": "java.lang.RuntimeException: java.lang.StringIndexOutOfBoundsException: Some Error\n\tat org.apache.storm.utils.DisruptorQueue.consumeBatchToCursor(DisruptorQueue.java:128)\n\tat org.apache.storm.utils.DisruptorQueue.consumeBatchWhenAvailable(DisruptorQueue.java:99)\n\tat org.apache.storm.disruptor$consume_batch_when_available.invoke(disruptor.clj:80)\n\tat backtype...more.."
+                        "error": "java.lang.RuntimeException: java.lang.StringIndexOutOfBoundsException: Some Error\n\tat org.apache.storm.utils.DisruptorQueue.consumeBatchToCursor(DisruptorQueue.java:128)\n\tat org.apache.storm.utils.DisruptorQueue.consumeBatchWhenAvailable(DisruptorQueue.java:99)\n\t...more.."
     }],
     "topologyId": "WordCount3-1-1402960825",
     "tasks": 5,
@@ -1298,9 +1299,9 @@ Sample response:
 }
 ```
 
-## Profiling and Debugging GET Operations
+## Profiling and Debugging POST Operations
 
-###  /api/v1/topology/\<id\>/profiling/start/\<host-port\>/\<timeout\> (GET)
+###  /api/v1/topology/\<id\>/profiling/start/\<host-port\>/\<timeout\> (POST)
 
 Request to start profiler on worker with timeout. Returns status and link to profiler artifacts for worker.
 Substitute appropriate values for \<id\>, \<host-port\> and \<timeout\>.
@@ -1339,7 +1340,7 @@ Sample response:
 }
 ```
 
-###  /api/v1/topology/\<id\>/profiling/dumpprofile/\<host-port\> (GET)
+###  /api/v1/topology/\<id\>/profiling/dumpprofile/\<host-port\> (POST)
 
 Request to dump profiler recording on worker. Returns status and worker id for the request.
 Substitute for \<id\> and \<host-port\>. 
@@ -1371,7 +1372,7 @@ Sample response:
 }
 ```
 
-###  /api/v1/topology/\<id\>/profiling/stop/\<host-port\> (GET)
+###  /api/v1/topology/\<id\>/profiling/stop/\<host-port\> (POST)
 
 Request to stop profiler on worker. Returns status and worker id for the request.
 Substitute for \<id\> and \<host-port\>. 
@@ -1403,7 +1404,7 @@ Sample response:
 }
 ```
 
-###  /api/v1/topology/\<id\>/profiling/dumpjstack/\<host-port\> (GET)
+###  /api/v1/topology/\<id\>/profiling/dumpjstack/\<host-port\> (POST)
 
 Request to dump jstack on worker. Returns status and worker id for the request.
 Substitute for \<id\> and \<host-port\>. 
@@ -1435,7 +1436,7 @@ Sample response:
 }
 ```
 
-###  /api/v1/topology/\<id\>/profiling/dumpheap/\<host-port\> (GET)
+###  /api/v1/topology/\<id\>/profiling/dumpheap/\<host-port\> (POST)
 
 Request to dump heap (jmap) on worker. Returns status and worker id for the request.
 Substitute for \<id\> and \<host-port\>. 
@@ -1467,7 +1468,7 @@ Sample response:
 }
 ```
 
-###  /api/v1/topology/\<id\>/profiling/restartworker/\<host-port\> (GET)
+###  /api/v1/topology/\<id\>/profiling/restartworker/\<host-port\> (POST)
 
 Request to request the worker. Returns status and worker id for the request.
 Substitute for \<id\> and \<host-port\>. 

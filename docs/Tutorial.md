@@ -103,11 +103,11 @@ This topology contains a spout and two bolts. The spout emits words, and each bo
 
 This code defines the nodes using the `setSpout` and `setBolt` methods. These methods take as input a user-specified id, an object containing the processing logic, and the amount of parallelism you want for the node. In this example, the spout is given id "words" and the bolts are given ids "exclaim1" and "exclaim2". 
 
-The object containing the processing logic implements the [IRichSpout](javadocs/org/apache/storm/topology/IRichSpout.html) interface for spouts and the [IRichBolt](javadocs/org/apache/storm/topology/IRichBolt.html) interface for bolts.
+The object containing the processing logic implements the [IRichSpout](https://javadoc.io/doc/org.apache.storm/storm-client/3.0.0/org/apache/storm/topology/IRichSpout.html) interface for spouts and the [IRichBolt](https://javadoc.io/doc/org.apache.storm/storm-client/3.0.0/org/apache/storm/topology/IRichBolt.html) interface for bolts.
 
 The last parameter, how much parallelism you want for the node, is optional. It indicates how many threads should execute that component across the cluster. If you omit it, Storm will only allocate one thread for that node.
 
-`setBolt` returns an [InputDeclarer](javadocs/org/apache/storm/topology/InputDeclarer.html) object that is used to define the inputs to the Bolt. Here, component "exclaim1" declares that it wants to read all the tuples emitted by component "words" using a shuffle grouping, and component "exclaim2" declares that it wants to read all the tuples emitted by component "exclaim1" using a shuffle grouping. "shuffle grouping" means that tuples should be randomly distributed from the input tasks to the bolt's tasks. There are many ways to group data between components. These will be explained in a few sections.
+`setBolt` returns an [InputDeclarer](https://javadoc.io/doc/org.apache.storm/storm-client/3.0.0/org/apache/storm/topology/InputDeclarer.html) object that is used to define the inputs to the Bolt. Here, component "exclaim1" declares that it wants to read all the tuples emitted by component "words" using a shuffle grouping, and component "exclaim2" declares that it wants to read all the tuples emitted by component "exclaim1" using a shuffle grouping. "shuffle grouping" means that tuples should be randomly distributed from the input tasks to the bolt's tasks. There are many ways to group data between components. These will be explained in a few sections.
 
 If you wanted component "exclaim2" to read all the tuples emitted by both component "words" and component "exclaim1", you would write component "exclaim2"'s definition like this:
 
@@ -251,7 +251,7 @@ Here's the definition of the `SplitSentence` bolt from `WordCountTopology`:
 ```java
 public static class SplitSentence extends ShellBolt implements IRichBolt {
     public SplitSentence() {
-        super("python", "splitsentence.py");
+        super("python3", "splitsentence.py");
     }
 
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
@@ -260,7 +260,7 @@ public static class SplitSentence extends ShellBolt implements IRichBolt {
 }
 ```
 
-`SplitSentence` overrides `ShellBolt` and declares it as running using `python` with the arguments `splitsentence.py`. Here's the implementation of `splitsentence.py`:
+`SplitSentence` overrides `ShellBolt` and declares it as running using `python3` with the arguments `splitsentence.py`. Here's the implementation of `splitsentence.py`:
 
 ```python
 import storm
@@ -282,7 +282,7 @@ Earlier on in this tutorial, we skipped over a few aspects of how tuples are emi
 
 ## Trident
 
-Storm guarantees that every message will be played through the topology at least once. A common question asked is "how do you do things like counting on top of Storm? Won't you overcount?" Storm has a higher level API called Trudent that let you achieve exactly-once messaging semantics for most computations. Read more about Trident [here](Trident-tutorial.html). 
+Storm guarantees that every message will be played through the topology at least once. A common question asked is "how do you do things like counting on top of Storm? Won't you overcount?" Storm has a higher level API called Trident that let you achieve exactly-once messaging semantics for most computations. Read more about Trident [here](Trident-tutorial.html). 
 
 ## Distributed RPC
 

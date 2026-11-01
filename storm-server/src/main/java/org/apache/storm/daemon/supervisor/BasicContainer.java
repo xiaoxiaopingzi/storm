@@ -34,7 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NavigableMap;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.storm.Config;
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.ServerConstants;
@@ -130,7 +130,9 @@ public class BasicContainer extends Container {
         AdvancedFSOps ops, String profileCmd) throws IOException {
         super(type, conf, supervisorId, supervisorPort, port, assignment,
             resourceIsolationManager, workerId, topoConf, ops, metricsRegistry, containerMemoryTracker);
-        assert (localState != null);
+        if (localState == null) {
+            throw new IOException("LocalState parameter value is null");
+        }
         this.localState = localState;
 
         if (type.isRecovery() && !type.isOnlyKillable()) {
@@ -209,7 +211,11 @@ public class BasicContainer extends Container {
      */
     protected void createNewWorkerId() {
         type.assertFull();
-        assert (workerId == null);
+        if (workerId != null) {
+            String err =  "Incorrect usage of createNewWorkerId(), current workerId is " + workerId + ", expecting null";
+            LOG.error(err);
+            throw new AssertionError(err);
+        }
         synchronized (localState) {
             workerId = Utils.uuid();
             Map<String, Integer> workerToPort = localState.getApprovedWorkers();
@@ -366,6 +372,10 @@ public class BasicContainer extends Container {
     }
 
     protected List<String> frameworkClasspath(SimpleVersion topoVersion) {
+        // Jars shared by the daemon and worker classpaths are de-duplicated into lib-common
+        // (see storm-dist dedup-libs.py); storm-client and its dependencies live there, so the
+        // worker classpath needs lib-common in addition to lib-worker.
+        File stormCommonLibDir = new File(stormHome, "lib-common");
         File stormWorkerLibDir = new File(stormHome, "lib-worker");
         String topoConfDir = System.getenv("STORM_CONF_DIR") != null
                 ? System.getenv("STORM_CONF_DIR")
@@ -373,6 +383,7 @@ public class BasicContainer extends Container {
         File stormExtlibDir = new File(stormHome, "extlib");
         String extcp = System.getenv("STORM_EXT_CLASSPATH");
         List<String> pathElements = new LinkedList<>();
+        pathElements.add(getWildcardDir(stormCommonLibDir));
         pathElements.add(getWildcardDir(stormWorkerLibDir));
         pathElements.add(getWildcardDir(stormExtlibDir));
         pathElements.add(extcp);

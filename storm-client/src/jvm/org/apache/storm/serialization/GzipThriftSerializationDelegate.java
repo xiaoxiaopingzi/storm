@@ -19,26 +19,34 @@
 package org.apache.storm.serialization;
 
 import java.util.Map;
+import org.apache.storm.Config;
 import org.apache.storm.thrift.TBase;
 import org.apache.storm.thrift.TDeserializer;
 import org.apache.storm.thrift.TException;
 import org.apache.storm.thrift.TSerializer;
+import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.Utils;
 
 /**
- * Note, this assumes it's deserializing a gzip byte stream, and will err if it encounters any other serialization.
+ * Note, this assumes it's deserializing a gzip byte stream, and will err if it encounters any other
+ * serialization.
  */
 public class GzipThriftSerializationDelegate implements SerializationDelegate {
 
+    private static final int DEFAULT_MAX_DECOMPRESSED_BYTES = 100 * 1024 * 1024;
+    private int maxDecompressedBytes;
+
     @Override
     public void prepare(Map<String, Object> topoConf) {
-        // No-op
+        this.maxDecompressedBytes = ObjectReader.getInt(topoConf
+                .getOrDefault(Config.STORM_COMPRESSION_GZIP_MAX_DECOMPRESSED_BYTES,
+                DEFAULT_MAX_DECOMPRESSED_BYTES));
     }
 
     @Override
     public byte[] serialize(Object object) {
         try {
-            return Utils.gzip(new TSerializer().serialize((TBase) object));
+            return Utils.GzipUtils.compress(new TSerializer().serialize((TBase) object));
         } catch (TException e) {
             throw new RuntimeException(e);
         }
@@ -48,7 +56,8 @@ public class GzipThriftSerializationDelegate implements SerializationDelegate {
     public <T> T deserialize(byte[] bytes, Class<T> clazz) {
         try {
             TBase instance = (TBase) clazz.newInstance();
-            new TDeserializer().deserialize(instance, Utils.gunzip(bytes));
+            new TDeserializer().deserialize(instance, Utils.GzipUtils.decompress(bytes,
+                    this.maxDecompressedBytes));
             return (T) instance;
         } catch (Exception e) {
             throw new RuntimeException(e);

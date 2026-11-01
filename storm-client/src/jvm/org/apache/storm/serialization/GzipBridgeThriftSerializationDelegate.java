@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
  * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
@@ -16,8 +16,10 @@ import java.util.Map;
 import java.util.zip.GZIPInputStream;
 
 /**
- * Always writes gzip out, but tests incoming to see if it's gzipped. If it is, deserializes with gzip. If not, uses {@link
- * org.apache.storm.serialization.ThriftSerializationDelegate} to deserialize. Any logic needing to be enabled via {@link
+ * Always writes gzip out, but tests incoming to see if it's gzipped. If it is, deserializes with
+ * gzip. If not, uses {@link
+ * org.apache.storm.serialization.ThriftSerializationDelegate} to deserialize. Any logic needing to
+ * be enabled via {@link
  * #prepare(java.util.Map)} is passed through to both delegates.
  */
 public class GzipBridgeThriftSerializationDelegate implements SerializationDelegate {
@@ -53,6 +55,6 @@ public class GzipBridgeThriftSerializationDelegate implements SerializationDeleg
      */
     private boolean isGzipped(byte[] bytes) {
         return (bytes.length > 1) && (bytes[0] == GZIP_MAGIC_FIRST_BYTE)
-               && (bytes[1] == GZIP_MAGIC_SECOND_BYTE);
+                && (bytes[1] == GZIP_MAGIC_SECOND_BYTE);
     }
 }

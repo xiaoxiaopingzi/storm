@@ -16,6 +16,14 @@
 
 package org.apache.storm.security.auth;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -26,14 +34,8 @@ import org.apache.storm.utils.Time;
 import org.apache.storm.utils.Time.SimulatedTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 public class ShellBasedGroupsMappingTest {
 
@@ -57,10 +59,12 @@ public class ShellBasedGroupsMappingTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     public void testCanGetGroups() throws Exception {
         try (SimulatedTime ignored = new SimulatedTime()) {
             groupsMapping.prepare(topoConf);
-            when(mockShell.execCommand(ShellUtils.getGroupsForUserCommand(TEST_USER_1))).thenReturn(TEST_TWO_GROUPS);
+            when(mockShell.execCommand(ShellUtils.getGroupsForUserCommand(TEST_USER_1)))
+                    .thenReturn(TEST_TWO_GROUPS);
 
             Set<String> groups = groupsMapping.getGroups(TEST_USER_1);
 
@@ -69,10 +73,12 @@ public class ShellBasedGroupsMappingTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     public void testWillCacheGroups() throws Exception {
         try (SimulatedTime ignored = new SimulatedTime()) {
             groupsMapping.prepare(topoConf);
-            when(mockShell.execCommand(ShellUtils.getGroupsForUserCommand(TEST_USER_1))).thenReturn(TEST_TWO_GROUPS, TEST_NO_GROUPS);
+            when(mockShell.execCommand(ShellUtils.getGroupsForUserCommand(TEST_USER_1)))
+                    .thenReturn(TEST_TWO_GROUPS, TEST_NO_GROUPS);
 
             Set<String> firstGroups = groupsMapping.getGroups(TEST_USER_1);
             Set<String> secondGroups = groupsMapping.getGroups(TEST_USER_1);
@@ -82,10 +88,12 @@ public class ShellBasedGroupsMappingTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     public void testWillExpireCache() throws Exception {
         try (SimulatedTime ignored = new SimulatedTime()) {
             groupsMapping.prepare(topoConf);
-            when(mockShell.execCommand(ShellUtils.getGroupsForUserCommand(TEST_USER_1))).thenReturn(TEST_TWO_GROUPS, TEST_NO_GROUPS);
+            when(mockShell.execCommand(ShellUtils.getGroupsForUserCommand(TEST_USER_1)))
+                    .thenReturn(TEST_TWO_GROUPS, TEST_NO_GROUPS);
 
             Set<String> firstGroups = groupsMapping.getGroups(TEST_USER_1);
             Time.advanceTimeSecs(CACHE_EXPIRATION_SECS * 2);

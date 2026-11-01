@@ -24,19 +24,34 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.google.common.net.HttpHeaders;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
+import org.apache.storm.daemon.logviewer.testsupport.SymbolicLinks;
+import org.apache.storm.daemon.logviewer.utils.ExceptionMeterNames;
+import org.apache.storm.daemon.logviewer.utils.LogFilePaths;
 import org.apache.storm.daemon.logviewer.utils.ResourceAuthorizer;
 import org.apache.storm.daemon.logviewer.utils.WorkerLogs;
 import org.apache.storm.metric.StormMetricsRegistry;
 import org.apache.storm.testing.TmpPath;
 import org.apache.storm.utils.Utils;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 public class LogviewerLogDownloadHandlerTest {
 
@@ -121,7 +136,385 @@ public class LogviewerLogDownloadHandlerTest {
         }
     }
 
+    @Test
+    public void testDownloadLogFileUnauthorizedUserDoesNotChangeLogFilePermission() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path daemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            Path workerLogRoot = daemonLogRoot.resolve("workers-artifacts");
+            Path file = workerLogRoot.resolve("topoA").resolve("1111").resolve("worker.log");
+            Files.createDirectories(file.getParent());
+            Files.createFile(file);
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessFile(anyString(), anyString())).thenReturn(false);
+            WorkerLogs workerLogs = mock(WorkerLogs.class);
+
+            LogviewerLogDownloadHandler handler = new LogviewerLogDownloadHandler(workerLogRoot.toString(),
+                daemonLogRoot.toString(), workerLogs, resourceAuthorizer, new StormMetricsRegistry());
+
+            Response response = handler.downloadLogFile("host", "topoA/1111/worker.log", "user");
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.FORBIDDEN.getStatusCode()));
+            verify(workerLogs, never()).setLogFilePermission(anyString());
+        }
+    }
+
+    @Test
+    public void testDownloadLogFileAuthorizedUserSetsLogFilePermission() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path daemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            Path workerLogRoot = daemonLogRoot.resolve("workers-artifacts");
+            Path file = workerLogRoot.resolve("topoA").resolve("1111").resolve("worker.log");
+            Files.createDirectories(file.getParent());
+            Files.createFile(file);
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessFile(anyString(), anyString())).thenReturn(true);
+            WorkerLogs workerLogs = mock(WorkerLogs.class);
+
+            LogviewerLogDownloadHandler handler = new LogviewerLogDownloadHandler(workerLogRoot.toString(),
+                daemonLogRoot.toString(), workerLogs, resourceAuthorizer, new StormMetricsRegistry());
+
+            Response response = handler.downloadLogFile("host", "topoA/1111/worker.log", "user");
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.OK.getStatusCode()));
+            verify(workerLogs).setLogFilePermission("topoA/1111/worker.log");
+        }
+    }
+
+    @Test
+    public void testDownloadDaemonLogFileDoesNotChangeLogFilePermission() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path daemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            Path workerLogRoot = daemonLogRoot.resolve("workers-artifacts");
+            Path daemonFile = daemonLogRoot.resolve("nimbus.log");
+            Files.createDirectories(workerLogRoot);
+            Files.createFile(daemonFile);
+
+            WorkerLogs workerLogs = mock(WorkerLogs.class);
+
+            LogviewerLogDownloadHandler handler = new LogviewerLogDownloadHandler(workerLogRoot.toString(),
+                daemonLogRoot.toString(), workerLogs, new ResourceAuthorizer(Utils.readStormConfig()), new StormMetricsRegistry());
+
+            Response response = handler.downloadDaemonLogFile("host", "nimbus.log", "user");
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.OK.getStatusCode()));
+            verify(workerLogs, never()).setLogFilePermission(anyString());
+        }
+    }
+
+    @Test
+    public void testDownloadDaemonLogFileUnauthorizedUser() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessDaemonFile(anyString())).thenReturn(false);
+            LogviewerLogDownloadHandler handler = createHandlerTraversalTests(rootPath.getFile().toPath(), resourceAuthorizer);
+
+            Response response = handler.downloadDaemonLogFile("host", "nimbus.log", "user");
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.FORBIDDEN.getStatusCode()));
+        }
+    }
+
+    @Test
+    public void testDownloadDaemonLogFileAuthorizedUser() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessDaemonFile(anyString())).thenReturn(true);
+            LogviewerLogDownloadHandler handler = createHandlerTraversalTests(rootPath.getFile().toPath(), resourceAuthorizer);
+            //Give the daemon log some content, so that the response is only empty if the file was not served.
+            Files.writeString(rootPath.getFile().toPath().resolve("logs").resolve("nimbus.log"), "nimbus log content");
+
+            Response response = handler.downloadDaemonLogFile("host", "nimbus.log", "user");
+            int status = response.getStatus();
+            String content = status == Response.Status.OK.getStatusCode() ? readEntity(response) : null;
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(status, is(Response.Status.OK.getStatusCode()));
+            assertThat(content, is("nimbus log content"));
+            String contentDisposition = response.getHeaderString(HttpHeaders.CONTENT_DISPOSITION);
+            assertThat(contentDisposition, containsString("host-nimbus.log"));
+            verify(resourceAuthorizer).isUserAllowedToAccessDaemonFile("user");
+        }
+    }
+
+    @Test
+    public void testDownloadLogFileDoesNotFollowSymbolicLinkToAnotherTopology() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path workerLogRoot = createWorkerLogTree(rootPath.getFile().toPath().resolve("logs"));
+            Path link = workerLogRoot.resolve("topoA").resolve("1111").resolve("other.log");
+            SymbolicLinks.create(link, workerLogRoot.resolve("topoB").resolve("1111").resolve("worker.log"));
+
+            WorkerLogs workerLogs = mock(WorkerLogs.class);
+            LogviewerLogDownloadHandler handler = createHandlerAllowingOnlyTopoA(rootPath.getFile().toPath().resolve("logs"), workerLogs);
+
+            Response response = handler.downloadLogFile("host", "topoA/1111/other.log", "user");
+            int status = response.getStatus();
+            String content = status == Response.Status.OK.getStatusCode() ? readEntity(response) : null;
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat("served content: " + content, status, is(Response.Status.NOT_FOUND.getStatusCode()));
+            verify(workerLogs, never()).setLogFilePermission(anyString());
+        }
+    }
+
+    @Test
+    public void testDownloadLogFileDoesNotFollowSymbolicLinkOutsideLogRoot() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path workerLogRoot = createWorkerLogTree(rootPath.getFile().toPath().resolve("logs"));
+            Path outside = rootPath.getFile().toPath().resolve("outside.txt");
+            Files.writeString(outside, "content outside the log root");
+            SymbolicLinks.create(workerLogRoot.resolve("topoA").resolve("1111").resolve("outside.log"), outside);
+
+            WorkerLogs workerLogs = mock(WorkerLogs.class);
+            LogviewerLogDownloadHandler handler = createHandlerAllowingOnlyTopoA(rootPath.getFile().toPath().resolve("logs"), workerLogs);
+
+            Response response = handler.downloadLogFile("host", "topoA/1111/outside.log", "user");
+            int status = response.getStatus();
+            String content = status == Response.Status.OK.getStatusCode() ? readEntity(response) : null;
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat("served content: " + content, status, is(Response.Status.NOT_FOUND.getStatusCode()));
+            verify(workerLogs, never()).setLogFilePermission(anyString());
+        }
+    }
+
+    @Test
+    public void testDownloadLogFileUnderSymbolicLinkRoot() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path realDaemonLogRoot = rootPath.getFile().toPath().resolve("real-logs");
+            createWorkerLogTree(realDaemonLogRoot);
+            Path linkedDaemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            SymbolicLinks.create(linkedDaemonLogRoot, realDaemonLogRoot);
+
+            WorkerLogs workerLogs = mock(WorkerLogs.class);
+            LogviewerLogDownloadHandler handler = createHandlerAllowingOnlyTopoA(linkedDaemonLogRoot, workerLogs);
+
+            Response response = handler.downloadLogFile("host", "topoA/1111/worker.log", "user");
+            int status = response.getStatus();
+            String content = status == Response.Status.OK.getStatusCode() ? readEntity(response) : null;
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(status, is(Response.Status.OK.getStatusCode()));
+            assertThat(content, is("topoA content"));
+            verify(workerLogs).setLogFilePermission("topoA/1111/worker.log");
+        }
+    }
+
+    @Test
+    public void testDownloadLogFileRejectsFileBelowSubdirectoryOfPortDir() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path workerLogRoot = createWorkerLogTree(rootPath.getFile().toPath().resolve("logs"));
+            Path nested = workerLogRoot.resolve("topoA").resolve("1111").resolve("sub").resolve("worker.log");
+            Files.createDirectories(nested.getParent());
+            Files.writeString(nested, "nested content");
+
+            WorkerLogs workerLogs = mock(WorkerLogs.class);
+            LogviewerLogDownloadHandler handler = createHandlerAllowingOnlyTopoA(rootPath.getFile().toPath().resolve("logs"), workerLogs);
+
+            Response response = handler.downloadLogFile("host", "topoA/1111/sub/worker.log", "user");
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.NOT_FOUND.getStatusCode()));
+            verify(workerLogs, never()).setLogFilePermission(anyString());
+        }
+    }
+
+    @Test
+    public void testDownloadDaemonLogFileFollowsSymbolicLink() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path daemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            createWorkerLogTree(daemonLogRoot);
+            Path realLog = Files.writeString(daemonLogRoot.resolve("nimbus.log.real"), "nimbus content");
+            SymbolicLinks.create(daemonLogRoot.resolve("nimbus.log"), realLog);
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessDaemonFile(anyString())).thenReturn(true);
+            LogviewerLogDownloadHandler handler = new LogviewerLogDownloadHandler(daemonLogRoot.resolve("workers-artifacts").toString(),
+                daemonLogRoot.toString(), mock(WorkerLogs.class), resourceAuthorizer, new StormMetricsRegistry());
+
+            Response response = handler.downloadDaemonLogFile("host", "nimbus.log", "user");
+            int status = response.getStatus();
+            String content = status == Response.Status.OK.getStatusCode() ? readEntity(response) : null;
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(status, is(Response.Status.OK.getStatusCode()));
+            assertThat(content, is("nimbus content"));
+        }
+    }
+
+    @Test
+    public void testDownloadLogFileReplacedBySymbolicLinkAfterCheckIsNotFound() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path daemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            Path workerLogRoot = createWorkerLogTree(daemonLogRoot);
+            SymbolicLinks.create(workerLogRoot.resolve("topoA").resolve("1111").resolve("other.log"),
+                workerLogRoot.resolve("topoB").resolve("1111").resolve("worker.log"));
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessFile(anyString(), startsWith("topoA" + File.separator))).thenReturn(true);
+            StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+            LogviewerLogDownloadHandler handler = new LogviewerLogDownloadHandler(workerLogRoot.toString(),
+                daemonLogRoot.toString(), mock(WorkerLogs.class), resourceAuthorizer, metricsRegistry);
+
+            Response response;
+            try (MockedStatic<LogFilePaths> ignored = passWorkerFileCheck()) {
+                response = handler.downloadLogFile("host", "topoA/1111/other.log", "user");
+            }
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.NOT_FOUND.getStatusCode()));
+            assertThat(metricsRegistry.registerMeter(ExceptionMeterNames.NUM_FILE_DOWNLOAD_EXCEPTIONS).getCount(), is(0L));
+        }
+    }
+
+    @Test
+    public void testDownloadLogFileRemovedAfterCheckIsNotFound() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path daemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            Path workerLogRoot = createWorkerLogTree(daemonLogRoot);
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessFile(anyString(), startsWith("topoA" + File.separator))).thenReturn(true);
+            StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+            LogviewerLogDownloadHandler handler = new LogviewerLogDownloadHandler(workerLogRoot.toString(),
+                daemonLogRoot.toString(), mock(WorkerLogs.class), resourceAuthorizer, metricsRegistry);
+
+            Response response;
+            try (MockedStatic<LogFilePaths> ignored = removeFileBeforeOpen()) {
+                response = handler.downloadLogFile("host", "topoA/1111/worker.log", "user");
+            }
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.NOT_FOUND.getStatusCode()));
+            assertThat(metricsRegistry.registerMeter(ExceptionMeterNames.NUM_FILE_DOWNLOAD_EXCEPTIONS).getCount(), is(0L));
+            assertThat(metricsRegistry.registerHistogram("logviewer:download-file-size-rounded-MB").getCount(), is(0L));
+        }
+    }
+
+    @Test
+    public void testDownloadDaemonLogFileRemovedAfterCheckIsNotFound() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path daemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            Path workerLogRoot = createWorkerLogTree(daemonLogRoot);
+            Files.writeString(daemonLogRoot.resolve("nimbus.log"), "nimbus content");
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessDaemonFile(anyString())).thenReturn(true);
+            StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+            LogviewerLogDownloadHandler handler = new LogviewerLogDownloadHandler(workerLogRoot.toString(),
+                daemonLogRoot.toString(), mock(WorkerLogs.class), resourceAuthorizer, metricsRegistry);
+
+            Response response;
+            try (MockedStatic<LogFilePaths> ignored = removeFileBeforeOpen()) {
+                response = handler.downloadDaemonLogFile("host", "nimbus.log", "user");
+            }
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.NOT_FOUND.getStatusCode()));
+            assertThat(metricsRegistry.registerMeter(ExceptionMeterNames.NUM_FILE_DOWNLOAD_EXCEPTIONS).getCount(), is(0L));
+        }
+    }
+
+    @Test
+    public void testDownloadLogFileRecordsSize() throws IOException {
+        try (TmpPath rootPath = new TmpPath()) {
+            Path daemonLogRoot = rootPath.getFile().toPath().resolve("logs");
+            Path workerLogRoot = createWorkerLogTree(daemonLogRoot);
+
+            ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+            when(resourceAuthorizer.isUserAllowedToAccessFile(anyString(), startsWith("topoA" + File.separator))).thenReturn(true);
+            StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+            LogviewerLogDownloadHandler handler = new LogviewerLogDownloadHandler(workerLogRoot.toString(),
+                daemonLogRoot.toString(), mock(WorkerLogs.class), resourceAuthorizer, metricsRegistry);
+
+            Response response = handler.downloadLogFile("host", "topoA/1111/worker.log", "user");
+            String content = readEntity(response);
+
+            Utils.forceDelete(rootPath.toString());
+
+            assertThat(response.getStatus(), is(Response.Status.OK.getStatusCode()));
+            assertThat(content, is("topoA content"));
+            assertThat(metricsRegistry.registerHistogram("logviewer:download-file-size-rounded-MB").getCount(), is(1L));
+        }
+    }
+
+    /**
+     * Lets every worker file pass the check, so the open sees a file that was removed or replaced by a symbolic link after the
+     * check.
+     */
+    static MockedStatic<LogFilePaths> passWorkerFileCheck() {
+        return mockStatic(LogFilePaths.class, invocation -> "isServableWorkerFile".equals(invocation.getMethod().getName())
+            ? Boolean.TRUE : invocation.callRealMethod());
+    }
+
+    /**
+     * Removes each file right before it is opened, as the log cleaner or log rotation may do between the check and the open.
+     */
+    static MockedStatic<LogFilePaths> removeFileBeforeOpen() {
+        return mockStatic(LogFilePaths.class, invocation -> {
+            if ("openForReading".equals(invocation.getMethod().getName())) {
+                Files.deleteIfExists(invocation.getArgument(0));
+            }
+            return invocation.callRealMethod();
+        });
+    }
+
+    /**
+     * Creates topoA/1111/worker.log and topoB/1111/worker.log with distinct content below the worker log root.
+     *
+     * @return the worker log root
+     */
+    private Path createWorkerLogTree(Path daemonLogRoot) throws IOException {
+        Path workerLogRoot = daemonLogRoot.resolve("workers-artifacts");
+        Path topoAFile = workerLogRoot.resolve("topoA").resolve("1111").resolve("worker.log");
+        Path topoBFile = workerLogRoot.resolve("topoB").resolve("1111").resolve("worker.log");
+        Files.createDirectories(topoAFile.getParent());
+        Files.createDirectories(topoBFile.getParent());
+        Files.writeString(topoAFile, "topoA content");
+        Files.writeString(topoBFile, "topoB content");
+        return workerLogRoot;
+    }
+
+    private LogviewerLogDownloadHandler createHandlerAllowingOnlyTopoA(Path daemonLogRoot, WorkerLogs workerLogs) {
+        //Models per topology access: the user may only read the logs of topoA.
+        ResourceAuthorizer resourceAuthorizer = mock(ResourceAuthorizer.class);
+        when(resourceAuthorizer.isUserAllowedToAccessFile(anyString(), startsWith("topoA" + File.separator))).thenReturn(true);
+        return new LogviewerLogDownloadHandler(daemonLogRoot.resolve("workers-artifacts").toString(),
+            daemonLogRoot.toString(), workerLogs, resourceAuthorizer, new StormMetricsRegistry());
+    }
+
+    private String readEntity(Response response) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ((StreamingOutput) response.getEntity()).write(out);
+        return out.toString(StandardCharsets.UTF_8);
+    }
+
     private LogviewerLogDownloadHandler createHandlerTraversalTests(Path rootPath) throws IOException {
+        return createHandlerTraversalTests(rootPath, new ResourceAuthorizer(Utils.readStormConfig()));
+    }
+
+    private LogviewerLogDownloadHandler createHandlerTraversalTests(Path rootPath, ResourceAuthorizer resourceAuthorizer)
+            throws IOException {
         Path daemonLogRoot = rootPath.resolve("logs");
         Path fileOutsideDaemonRoot = rootPath.resolve("evil.sh");
         Path workerLogRoot = daemonLogRoot.resolve("workers-artifacts");
@@ -143,7 +536,7 @@ public class LogviewerLogDownloadHandlerTest {
         Map<String, Object> stormConf = Utils.readStormConfig();
         StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
         return new LogviewerLogDownloadHandler(workerLogRoot.toString(), daemonLogRoot.toString(),
-            new WorkerLogs(stormConf, workerLogRoot, metricsRegistry), new ResourceAuthorizer(stormConf), metricsRegistry);
+            new WorkerLogs(stormConf, workerLogRoot, metricsRegistry), resourceAuthorizer, metricsRegistry);
     }
 
 }

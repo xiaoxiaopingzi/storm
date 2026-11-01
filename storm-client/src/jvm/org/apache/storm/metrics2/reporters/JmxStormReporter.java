@@ -12,8 +12,9 @@
 
 package org.apache.storm.metrics2.reporters;
 
-import com.codahale.metrics.JmxReporter;
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.jmx.JmxReporter;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.apache.storm.daemon.metrics.ClientMetricsUtils;
@@ -32,7 +33,8 @@ public class JmxStormReporter implements StormReporter {
     }
 
     @Override
-    public void prepare(MetricRegistry metricsRegistry, Map<String, Object> topoConf,  Map<String, Object> reporterConf) {
+    public void prepare(MetricRegistry metricsRegistry, Map<String, Object> topoConf, Map<String,
+        Object> reporterConf) {
         LOG.info("Preparing...");
         JmxReporter.Builder builder = JmxReporter.forRegistry(metricsRegistry);
 
@@ -70,7 +72,8 @@ public class JmxStormReporter implements StormReporter {
             LOG.debug("Starting...");
             reporter.start();
         } else {
-            throw new IllegalStateException("Attempt to start without preparing " + getClass().getSimpleName());
+            throw new IllegalStateException("Attempt to start without preparing " + getClass()
+                    .getSimpleName());
         }
     }
 
@@ -80,7 +83,15 @@ public class JmxStormReporter implements StormReporter {
             LOG.debug("Stopping...");
             reporter.stop();
         } else {
-            throw new IllegalStateException("Attempt to stop without preparing " + getClass().getSimpleName());
+            throw new IllegalStateException("Attempt to stop without preparing " + getClass()
+                    .getSimpleName());
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
+        if (reporter != null) {
+            reporter.close();
         }
     }
 }

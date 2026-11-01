@@ -14,25 +14,22 @@ package org.apache.storm.streams.operations;
 
 /**
  * Interface for aggregating values.
- *
- * @param <T> the original value type
- * @param <A> the accumulator type
- * @param <R> the result type
  */
 public interface CombinerAggregator<T, A, R> extends Operation {
     /**
-     * A static factory to create a {@link CombinerAggregator} based on initial value, accumulator and combiner.
+     * A static factory to create a {@link CombinerAggregator} based on initial value, accumulator
+     * and combiner.
      *
      * @param initialValue the initial value of the result to start with
      * @param accumulator  a function that accumulates values into a partial result
      * @param combiner     a function that combines partially accumulated results
-     * @param <T>          the value type
-     * @param <R>          the result type
      * @return the {@link CombinerAggregator}
      */
     static <T, R> CombinerAggregator<T, R, R> of(R initialValue,
-                                                 BiFunction<? super R, ? super T, ? extends R> accumulator,
-                                                 BiFunction<? super R, ? super R, ? extends R> combiner) {
+                                                 BiFunction<? super R, ? super T,
+                                                 ? extends R> accumulator,
+                                                 BiFunction<? super R, ? super R,
+                                                 ? extends R> combiner) {
         return new CombinerAggregator<T, R, R>() {
             @Override
             public R init() {

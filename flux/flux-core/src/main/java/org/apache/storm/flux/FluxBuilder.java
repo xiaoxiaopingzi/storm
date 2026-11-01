@@ -43,9 +43,12 @@ import org.apache.storm.flux.model.PropertyDef;
 import org.apache.storm.flux.model.SpoutDef;
 import org.apache.storm.flux.model.StreamDef;
 import org.apache.storm.flux.model.TopologyDef;
+import org.apache.storm.flux.model.WorkerHookDef;
 import org.apache.storm.generated.StormTopology;
 import org.apache.storm.grouping.CustomStreamGrouping;
+import org.apache.storm.hooks.IWorkerHook;
 import org.apache.storm.topology.BoltDeclarer;
+import org.apache.storm.topology.ComponentConfigurationDeclarer;
 import org.apache.storm.topology.IBasicBolt;
 import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.topology.IRichSpout;
@@ -55,11 +58,12 @@ import org.apache.storm.topology.SpoutDeclarer;
 import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.utils.Utils;
+import org.apache.storm.validation.ConfigValidation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class FluxBuilder {
-    private static Logger LOG = LoggerFactory.getLogger(FluxBuilder.class);
+    private static final Logger LOG = LoggerFactory.getLogger(FluxBuilder.class);
 
 
     /**
@@ -70,7 +74,10 @@ public class FluxBuilder {
     public static Config buildConfig(TopologyDef topologyDef) {
         // merge contents of `config` into topology config
         Config conf = new Config();
-        conf.putAll(topologyDef.getConfig());
+        Map<String, Object> topologyConfig = topologyDef.getConfig();
+        // validate the topology-wide config so invalid values fail fast
+        ConfigValidation.validateFields(topologyConfig);
+        conf.putAll(topologyConfig);
         return conf;
     }
 
@@ -116,6 +123,9 @@ public class FluxBuilder {
 
             // process stream definitions
             buildStreamDefinitions(context, builder);
+
+            // create worker hooks
+            buildWorkerHooks(context, builder);
 
             topology = builder.createTopology();
         } else {
@@ -180,55 +190,40 @@ public class FluxBuilder {
         for (StreamDef stream : topologyDef.getStreams()) {
             Object boltObj = context.getBolt(stream.getTo());
             BoltDeclarer declarer = declarers.get(stream.getTo());
-            if (boltObj instanceof IRichBolt) {
-                if (declarer == null) {
-                    declarer = builder.setBolt(stream.getTo(),
-                            (IRichBolt) boltObj,
+            boolean newDeclarer = declarer == null;
+            if (newDeclarer) {
+                declarer = switch (boltObj) {
+                    case IRichBolt b -> builder.setBolt(stream.getTo(), b,
                             topologyDef.parallelismForBolt(stream.getTo()));
-                    declarers.put(stream.getTo(), declarer);
-                }
-            } else if (boltObj instanceof IBasicBolt) {
-                if (declarer == null) {
-                    declarer = builder.setBolt(
-                            stream.getTo(),
-                            (IBasicBolt) boltObj,
+                    case IBasicBolt b -> builder.setBolt(stream.getTo(), b,
                             topologyDef.parallelismForBolt(stream.getTo()));
-                    declarers.put(stream.getTo(), declarer);
-                }
-            } else if (boltObj instanceof IWindowedBolt) {
-                if (declarer == null) {
-                    declarer = builder.setBolt(
-                            stream.getTo(),
-                            (IWindowedBolt) boltObj,
+                    case IWindowedBolt b -> builder.setBolt(stream.getTo(), b,
                             topologyDef.parallelismForBolt(stream.getTo()));
-                    declarers.put(stream.getTo(), declarer);
-                }
-            } else if (boltObj instanceof IStatefulBolt) {
-                if (declarer == null) {
-                    declarer = builder.setBolt(
-                            stream.getTo(),
-                            (IStatefulBolt) boltObj,
+                    case IStatefulBolt b -> builder.setBolt(stream.getTo(), b,
                             topologyDef.parallelismForBolt(stream.getTo()));
-                    declarers.put(stream.getTo(), declarer);
+                    default -> throw new IllegalArgumentException("Class does not appear to be a bolt: "
+                            + boltObj.getClass().getName());
+                };
+                // resource and config declarations apply to the bolt as a whole, so only apply them once
+                // when the declarer is first created rather than on every incoming stream
+                BoltDef boltDef = topologyDef.getBoltDef(stream.getTo());
+                if (boltDef.getOnHeapMemoryLoad() > -1) {
+                    if (boltDef.getOffHeapMemoryLoad() > -1) {
+                        declarer.setMemoryLoad(boltDef.getOnHeapMemoryLoad(), boltDef.getOffHeapMemoryLoad());
+                    } else {
+                        declarer.setMemoryLoad(boltDef.getOnHeapMemoryLoad());
+                    }
                 }
-            } else {
-                throw new IllegalArgumentException("Class does not appear to be a bolt: "
-                        + boltObj.getClass().getName());
-            }
+                if (boltDef.getCpuLoad() > -1) {
+                    declarer.setCPULoad(boltDef.getCpuLoad());
+                }
+                if (boltDef.getNumTasks() > -1) {
+                    declarer.setNumTasks(boltDef.getNumTasks());
+                }
+                applyComponentConfig(boltDef.getConfig(), declarer);
 
-            BoltDef boltDef = topologyDef.getBoltDef(stream.getTo());
-            if (boltDef.getOnHeapMemoryLoad() > -1) {
-                if (boltDef.getOffHeapMemoryLoad() > -1) {
-                    declarer.setMemoryLoad(boltDef.getOnHeapMemoryLoad(), boltDef.getOffHeapMemoryLoad());
-                } else {
-                    declarer.setMemoryLoad(boltDef.getOnHeapMemoryLoad());
-                }
-            }
-            if (boltDef.getCpuLoad() > -1) {
-                declarer.setCPULoad(boltDef.getCpuLoad());
-            }
-            if (boltDef.getNumTasks() > -1) {
-                declarer.setNumTasks(boltDef.getNumTasks());
+                // persist in declares cache
+                declarers.put(stream.getTo(), declarer);
             }
 
             GroupingDef grouping = stream.getGrouping();
@@ -241,7 +236,7 @@ public class FluxBuilder {
                     declarer.shuffleGrouping(stream.getFrom(), streamId);
                     break;
                 case FIELDS:
-                    //TODO check for null grouping args
+                    //TODO: check for null grouping args
                     declarer.fieldsGrouping(stream.getFrom(), streamId, new Fields(grouping.getArgs()));
                     break;
                 case ALL:
@@ -451,6 +446,7 @@ public class FluxBuilder {
             if (sd.getNumTasks() > -1) {
                 declarer.setNumTasks(sd.getNumTasks());
             }
+            applyComponentConfig(sd.getConfig(), declarer);
 
             context.addSpout(sd.getId(), spout);
         }
@@ -465,6 +461,14 @@ public class FluxBuilder {
         return (IRichSpout) buildObject(def, context);
     }
 
+    private static void applyComponentConfig(Map<String, Object> config, ComponentConfigurationDeclarer declarer) {
+        if (config == null || config.isEmpty()) {
+            return;
+        }
+        ConfigValidation.validateFields(config);
+        declarer.addConfigurations(config);
+    }
+
     /**
      * Given a list of bolt definitions, build a map of Storm bolts with the bolt definition id as the key.
      * Attempt to coerce the given constructor arguments to a matching bolt constructor as much as possible.
@@ -475,6 +479,18 @@ public class FluxBuilder {
             Class clazz = Class.forName(def.getClassName());
             Object bolt = buildObject(def, context);
             context.addBolt(def.getId(), bolt);
+        }
+    }
+
+    /**
+     * Given a list of worker hook definitions, build a Storm worker hook implementation by attempting to find a matching
+     * constructor in the given worker hook class and add them to the topology builder.
+     */
+    private static void buildWorkerHooks(ExecutionContext context, TopologyBuilder builder) throws ClassNotFoundException,
+            NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, NoSuchFieldException {
+        for (WorkerHookDef whDef : context.getTopologyDef().getWorkerHooks()) {
+            IWorkerHook workerHook = (IWorkerHook) buildObject(whDef, context);
+            builder.addWorkerHook(workerHook);
         }
     }
 
@@ -648,7 +664,7 @@ public class FluxBuilder {
 
             // List to array conversion
             if (paramType.isArray() && List.class.isAssignableFrom(objectType)) {
-                // TODO more collection content type checking
+                // TODO: more collection content type checking
                 LOG.debug("Conversion appears possible...");
                 List list = (List) obj;
                 LOG.debug("Array Type: {}, List type: {}", paramType.getComponentType(), list.get(0).getClass());
@@ -706,7 +722,7 @@ public class FluxBuilder {
             } else if (paramType.isEnum() && objectType.equals(String.class)) {
                 LOG.debug("Yes, will convert a String to enum");
             } else if (paramType.isArray() && List.class.isAssignableFrom(objectType)) {
-                // TODO more collection content type checking
+                // TODO: more collection content type checking
                 LOG.debug("Assignment is possible if we convert a List to an array.");
                 LOG.debug("Array Type: {}, List type: {}", paramType.getComponentType(), ((List) obj).get(0).getClass());
             } else {

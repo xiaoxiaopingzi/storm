@@ -35,6 +35,7 @@ import org.apache.storm.spout.ISpout;
 import org.apache.storm.spout.SpoutOutputCollector;
 import org.apache.storm.stats.ClientStatsUtil;
 import org.apache.storm.stats.SpoutExecutorStats;
+import org.apache.storm.tracing.TupleTracer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.TupleImpl;
 import org.apache.storm.utils.ConfigUtils;
@@ -50,6 +51,7 @@ import org.slf4j.LoggerFactory;
 public class SpoutExecutor extends Executor {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpoutExecutor.class);
+    private static final String TIMEOUT_REASON = "TIMEOUT";
 
     private final IWaitStrategy spoutWaitStrategy;
     private final IWaitStrategy backPressureWaitStrategy;
@@ -68,11 +70,14 @@ public class SpoutExecutor extends Executor {
     private final RateCounter skippedInactiveMs;
     private final RateCounter skippedBackpressureMs;
 
-    public SpoutExecutor(final WorkerState workerData, final List<Long> executorId, Map<String, String> credentials) {
+    public SpoutExecutor(final WorkerState workerData, final List<Long> executorId, Map<String,
+            String> credentials) {
         super(workerData, executorId, credentials, ClientStatsUtil.SPOUT);
-        this.spoutWaitStrategy = ReflectionUtils.newInstance((String) topoConf.get(Config.TOPOLOGY_SPOUT_WAIT_STRATEGY));
+        this.spoutWaitStrategy = ReflectionUtils.newInstance((String) topoConf
+                .get(Config.TOPOLOGY_SPOUT_WAIT_STRATEGY));
         this.spoutWaitStrategy.prepare(topoConf, WaitSituation.SPOUT_WAIT);
-        this.backPressureWaitStrategy = ReflectionUtils.newInstance((String) topoConf.get(Config.TOPOLOGY_BACKPRESSURE_WAIT_STRATEGY));
+        this.backPressureWaitStrategy = ReflectionUtils.newInstance((String) topoConf
+                .get(Config.TOPOLOGY_BACKPRESSURE_WAIT_STRATEGY));
         this.backPressureWaitStrategy.prepare(topoConf, WaitSituation.BACK_PRESSURE_WAIT);
 
         this.lastActive = new AtomicBoolean(false);
@@ -80,12 +85,16 @@ public class SpoutExecutor extends Executor {
         this.emittedCount = new MutableLong(0);
         this.emptyEmitStreak = new MutableLong(0);
         this.stats = new SpoutExecutorStats(
-            ConfigUtils.samplingRate(this.getTopoConf()), ObjectReader.getInt(this.getTopoConf().get(Config.NUM_STAT_BUCKETS)));
-        this.skippedMaxSpoutMs = workerData.getMetricRegistry().rateCounter("__skipped-max-spout-ms", componentId,
+                ConfigUtils.samplingRate(this.getTopoConf()), ObjectReader.getInt(this.getTopoConf()
+                .get(Config.NUM_STAT_BUCKETS)));
+        this.skippedMaxSpoutMs = workerData.getMetricRegistry()
+                .rateCounter("__skipped-max-spout-ms", componentId,
                 taskIds.get(0));
-        this.skippedInactiveMs = workerData.getMetricRegistry().rateCounter("__skipped-inactive-ms", componentId,
+        this.skippedInactiveMs = workerData.getMetricRegistry().rateCounter("__skipped-inactive-ms",
+                componentId,
                 taskIds.get(0));
-        this.skippedBackpressureMs = workerData.getMetricRegistry().rateCounter("__skipped-backpressure-ms", componentId,
+        this.skippedBackpressureMs = workerData.getMetricRegistry()
+                .rateCounter("__skipped-backpressure-ms", componentId,
                 taskIds.get(0));
     }
 
@@ -95,17 +104,18 @@ public class SpoutExecutor extends Executor {
     }
 
     public void init(final ArrayList<Task> idToTask, int idToTaskBase) throws InterruptedException {
-        this.threadId = Thread.currentThread().getId();
+        this.threadId = Thread.currentThread().threadId();
         executorTransfer.initLocalRecvQueues();
         workerReady.await();
         while (!stormActive.get()) {
-            //Topology may be deployed in deactivated mode, wait for activation
+            // Topology may be deployed in deactivated mode, wait for activation
             Utils.sleepNoSimulation(100);
         }
 
         LOG.info("Opening spout {}:{}", componentId, taskIds);
         this.idToTask = idToTask;
-        this.maxSpoutPending = ObjectReader.getInt(topoConf.get(Config.TOPOLOGY_MAX_SPOUT_PENDING), 0) * idToTask.size();
+        this.maxSpoutPending = ObjectReader.getInt(topoConf.get(Config.TOPOLOGY_MAX_SPOUT_PENDING),
+                0) * idToTask.size();
         this.spouts = new ArrayList<>();
         for (Task task : idToTask) {
             if (task != null) {
@@ -119,7 +129,8 @@ public class SpoutExecutor extends Executor {
                 if (tupleInfo.getTimestamp() != 0) {
                     timeDelta = Time.deltaMs(tupleInfo.getTimestamp());
                 }
-                failSpoutMsg(SpoutExecutor.this, idToTask.get(tupleInfo.getTaskId() - idToTaskBase), timeDelta, tupleInfo, "TIMEOUT");
+                failSpoutMsg(SpoutExecutor.this, idToTask.get(tupleInfo.getTaskId() - idToTaskBase),
+                        timeDelta, tupleInfo, TIMEOUT_REASON);
             }
         });
 
@@ -131,8 +142,8 @@ public class SpoutExecutor extends Executor {
             }
             ISpout spoutObject = (ISpout) taskData.getTaskObject();
             spoutOutputCollector = new SpoutOutputCollectorImpl(
-                spoutObject, this, taskData, emittedCount,
-                hasAckers, rand, hasEventLoggers, isDebug, pending);
+                    spoutObject, this, taskData, emittedCount,
+                    hasAckers, rand, hasEventLoggers, isDebug, pending);
             SpoutOutputCollector outputCollector = new SpoutOutputCollector(spoutOutputCollector);
             this.outputCollectors.add(outputCollector);
 
@@ -166,7 +177,8 @@ public class SpoutExecutor extends Executor {
                     recvqCheckSkips = 0;
                 }
                 long currCount = emittedCount.get();
-                boolean reachedMaxSpoutPending = (maxSpoutPending != 0) && (pending.size() >= maxSpoutPending);
+                boolean reachedMaxSpoutPending = (maxSpoutPending != 0) && (pending
+                        .size() >= maxSpoutPending);
                 boolean isActive = stormActive.get();
 
                 if (!isActive) {
@@ -183,7 +195,8 @@ public class SpoutExecutor extends Executor {
                 long emptyStretch = 0;
 
                 if (!reachedMaxSpoutPending && pendingEmitsIsEmpty) {
-                    for (int j = 0; j < spouts.size(); j++) { // in critical path. don't use iterators.
+                    for (int j = 0; j < spouts
+                            .size(); j++) { // in critical path. don't use iterators.
                         spouts.get(j).nextTuple();
                     }
                     noEmits = (currCount == emittedCount.get());
@@ -226,13 +239,15 @@ public class SpoutExecutor extends Executor {
             private void backPressureWaitStrategy() throws InterruptedException {
                 long start = Time.currentTimeMillis();
                 if (bpIdleCount == 0) { // check avoids multiple log msgs when in a idle loop
-                    LOG.debug("Experiencing Back Pressure from downstream components. Entering BackPressure Wait.");
+                    LOG.debug("Experiencing Back Pressure from downstream components. Entering "
+                            + "BackPressure Wait.");
                 }
                 bpIdleCount = backPressureWaitStrategy.idle(bpIdleCount);
                 skippedBackpressureMs.inc(Time.currentTimeMillis() - start);
             }
 
-            private void spoutWaitStrategy(boolean reachedMaxSpoutPending, long emptyStretch) throws InterruptedException {
+            private void spoutWaitStrategy(boolean reachedMaxSpoutPending,
+                    long emptyStretch) throws InterruptedException {
                 emptyEmitStreak.increment();
                 long start = Time.currentTimeMillis();
                 swIdleCount = spoutWaitStrategy.idle(swIdleCount);
@@ -284,6 +299,29 @@ public class SpoutExecutor extends Executor {
     }
 
     @Override
+    protected void acceptTupleAction(int taskId, TupleImpl tuple) {
+
+        String streamId = tuple.getSourceStreamId();
+
+        try {
+            if (taskId != AddressedTuple.BROADCAST_DEST) {
+                tupleActionFn(taskId, tuple);
+            } else if (streamId.equals(Constants.SYSTEM_TICK_STREAM_ID)) {
+                // taskId is irrelevant here. Ensures pending.rotate() is called once per tick.
+                tupleActionFn(taskIds.get(0), tuple);
+
+            } else {
+                for (Integer t : taskIds) {
+                    tupleActionFn(t, tuple);
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    @Override
     public void tupleActionFn(int taskId, TupleImpl tuple) throws Exception {
         String streamId = tuple.getSourceStreamId();
         if (Constants.SYSTEM_FLUSH_STREAM_ID.equals(streamId)) {
@@ -298,13 +336,21 @@ public class SpoutExecutor extends Executor {
             if (pendingForId != null) {
                 pending.put(id, pendingForId);
             }
+        } else if (Constants.FEEDBACK_STREAM_ID.equals(streamId)) {
+            if (!this.upstreamFeedbackEnabled) {
+                LOG.debug("Upstream feedback skipped.");
+            } else {
+                // update internal metrics
+                this.updateChildEwmaStats(idToTask.get(taskId - idToTaskBase), tuple);
+            }
         } else {
             Long id = (Long) tuple.getValue(0);
             Long timeDeltaMs = (Long) tuple.getValue(1);
             TupleInfo tupleInfo = pending.remove(id);
             if (tupleInfo != null && tupleInfo.getMessageId() != null) {
                 if (taskId != tupleInfo.getTaskId()) {
-                    throw new RuntimeException("Fatal error, mismatched task ids: " + taskId + " " + tupleInfo.getTaskId());
+                    throw new RuntimeException("Fatal error, mismatched task ids: " + taskId + " "
+                            + tupleInfo.getTaskId());
                 }
                 Long timeDelta = null;
                 if (hasAckers) {
@@ -316,22 +362,32 @@ public class SpoutExecutor extends Executor {
                 if (streamId.equals(Acker.ACKER_ACK_STREAM_ID)) {
                     ackSpoutMsg(this, idToTask.get(taskId - idToTaskBase), timeDelta, tupleInfo);
                 } else if (streamId.equals(Acker.ACKER_FAIL_STREAM_ID)) {
-                    failSpoutMsg(this, idToTask.get(taskId - idToTaskBase), timeDelta, tupleInfo, "FAIL-STREAM");
+                    failSpoutMsg(this, idToTask.get(taskId - idToTaskBase), timeDelta, tupleInfo,
+                            "FAIL-STREAM");
                 }
             }
         }
     }
 
-    public void ackSpoutMsg(SpoutExecutor executor, Task taskData, Long timeDelta, TupleInfo tupleInfo) {
+    public void ackSpoutMsg(SpoutExecutor executor, Task taskData, Long timeDelta,
+            TupleInfo tupleInfo) {
         try {
             ISpout spout = (ISpout) taskData.getTaskObject();
             int taskId = taskData.getTaskId();
             if (executor.getIsDebug()) {
-                LOG.info("SPOUT Acking message {} {}", tupleInfo.getRootId(), tupleInfo.getMessageId());
+                LOG.info("SPOUT Acking message {} {}", tupleInfo.getRootId(), tupleInfo
+                        .getMessageId());
+            }
+            Object traceContext = tupleInfo.getTraceContext();
+            if (traceContext != null) {
+                long latencyMs = Time.deltaMs(tupleInfo.getTraceEmitTimeMs());
+                executor.getTupleTracer().spoutOutcome(taskId, traceContext, TupleTracer.Outcome.ACK, latencyMs);
             }
             spout.ack(tupleInfo.getMessageId());
-            if (!taskData.getUserContext().getHooks().isEmpty()) { // avoid allocating SpoutAckInfo obj if not necessary
-                new SpoutAckInfo(tupleInfo.getMessageId(), taskId, timeDelta).applyOn(taskData.getUserContext());
+            if (!taskData.getUserContext().getHooks()
+                    .isEmpty()) { // avoid allocating SpoutAckInfo obj if not necessary
+                new SpoutAckInfo(tupleInfo.getMessageId(), taskId, timeDelta).applyOn(taskData
+                        .getUserContext());
             }
             if (hasAckers && timeDelta != null) {
                 executor.getStats().spoutAckedTuple(tupleInfo.getStream(), timeDelta);
@@ -342,15 +398,24 @@ public class SpoutExecutor extends Executor {
         }
     }
 
-    public void failSpoutMsg(SpoutExecutor executor, Task taskData, Long timeDelta, TupleInfo tupleInfo, String reason) {
+    public void failSpoutMsg(SpoutExecutor executor, Task taskData, Long timeDelta,
+            TupleInfo tupleInfo, String reason) {
         try {
             ISpout spout = (ISpout) taskData.getTaskObject();
             int taskId = taskData.getTaskId();
             if (executor.getIsDebug()) {
-                LOG.info("SPOUT Failing {} : {} REASON: {}", tupleInfo.getRootId(), tupleInfo, reason);
+                LOG.info("SPOUT Failing {} : {} REASON: {}", tupleInfo.getRootId(), tupleInfo,
+                        reason);
+            }
+            Object traceContext = tupleInfo.getTraceContext();
+            if (traceContext != null) {
+                TupleTracer.Outcome outcome = TIMEOUT_REASON.equals(reason) ? TupleTracer.Outcome.TIMEOUT : TupleTracer.Outcome.FAIL;
+                long latencyMs = Time.deltaMs(tupleInfo.getTraceEmitTimeMs());
+                executor.getTupleTracer().spoutOutcome(taskId, traceContext, outcome, latencyMs);
             }
             spout.fail(tupleInfo.getMessageId());
-            new SpoutFailInfo(tupleInfo.getMessageId(), taskId, timeDelta).applyOn(taskData.getUserContext());
+            new SpoutFailInfo(tupleInfo.getMessageId(), taskId, timeDelta).applyOn(taskData
+                    .getUserContext());
             if (timeDelta != null) {
                 executor.getStats().spoutFailedTuple(tupleInfo.getStream());
                 taskData.getTaskMetrics().spoutFailedTuple(tupleInfo.getStream());
@@ -359,7 +424,6 @@ public class SpoutExecutor extends Executor {
             throw Utils.wrapInRuntime(e);
         }
     }
-
 
     public int getSpoutRecvqCheckSkipCount() {
         if (ackingEnabled) {
@@ -370,6 +434,6 @@ public class SpoutExecutor extends Executor {
 
     public long getThreadId() {
         return threadId;
-    }   
-    
+    }
+
 }

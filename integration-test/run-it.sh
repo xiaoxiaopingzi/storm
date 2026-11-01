@@ -30,11 +30,6 @@ function list_storm_processes() {
     (ps -ef | grep -i -e zookeeper | grep -v grep) && (ps -ef | grep -i -e storm.home  | grep -v grep)
 }
 
-if [[ "$TRAVIS_JDK_VERSION" == "openjdk11" ]]
-then
-  #Work around https://github.com/travis-ci/travis-ci/issues/9784
-  chmod o+rx /home/travis
-fi
 list_storm_processes || true
 if [ "$(uname -m)" != aarch64 ]; then
   # increasing swap space so we can run lots of workers
@@ -64,14 +59,22 @@ if [[ "${USER}" == "vagrant" ]]; then # install oracle jdk8 or openjdk11
     mvn --version
     export MAVEN_OPTS="-Xmx3000m"
 else
-    ( while true; do echo "heartbeat"; sleep 300; done ) & #heartbeat needed by travis ci
-    if [[ "${USER}" == "travis" ]]; then
+    if [[ "${USER}" == "github" ]]; then
+        # The distribution takes public/ from storm-webapp/target/classes/WEB-INF, which this job
+        # does not build; it only has the storm-webapp jar from the build job.
+        webapp_jar=$(find ~/.m2/repository/org/apache/storm/storm-webapp -name 'storm-webapp-*.jar' \
+            -not -name '*-tests.jar' -not -name '*-sources.jar' -not -name '*-javadoc.jar' | head -1)
+        [[ -n "${webapp_jar}" ]] || die "storm-webapp jar not found in the local Maven repository"
+        mkdir -p "${STORM_SRC_DIR}/storm-webapp/target/classes"
+        unzip -q -o "${webapp_jar}" 'WEB-INF/*' -d "${STORM_SRC_DIR}/storm-webapp/target/classes"
         ( cd "${STORM_SRC_DIR}/storm-dist/binary" && mvn clean package -Dgpg.skip=true )
     fi
-    (( $(find "${STORM_SRC_DIR}/storm-dist/binary" -iname 'apache-storm*.zip' | wc -l) == 1 )) || die "expected exactly one zip file, did you run: cd ${STORM_SRC_DIR}/storm-dist/binary && mvn clean package -Dgpg.skip=true"
+    # The binary build also produces the lean "storm-lite" distribution; the integration
+    # tests run against the full one, so ignore apache-storm-*-lite.zip here.
+    (( $(find "${STORM_SRC_DIR}/storm-dist/binary" -iname 'apache-storm*.zip' -not -iname '*-lite.zip' | wc -l) == 1 )) || die "expected exactly one zip file, did you run: cd ${STORM_SRC_DIR}/storm-dist/binary && mvn clean package -Dgpg.skip=true"
 fi
 
-storm_binary_zip=$(find "${STORM_SRC_DIR}/storm-dist" -iname '*.zip')
+storm_binary_zip=$(find "${STORM_SRC_DIR}/storm-dist" -iname 'apache-storm*.zip' -not -iname '*-lite.zip')
 storm_binary_name=$(basename "${storm_binary_zip}")
 export STORM_VERSION=$(grep -oPe '\d.*(?=.zip)' <<<"${storm_binary_name}")
 echo "Using storm version:" ${STORM_VERSION}
@@ -80,10 +83,8 @@ echo "Using storm version:" ${STORM_VERSION}
 list_storm_processes || true
 sudo bash "${SCRIPT_DIR}/config/common.sh"
 sudo bash "${SCRIPT_DIR}/config/install-storm.sh" "$storm_binary_zip"
-if [[ "$TRAVIS_JDK_VERSION" == "openjdk11" ]] || [[ "${JDK_VERSION}" == "11" ]]
-then
-  cat "${SCRIPT_DIR}/config/storm-java9.yaml" | sudo tee -a /usr/share/storm/conf/storm.yaml
-fi
+# storm.yaml points ZooKeeper, Nimbus and DRPC at node1; make it resolve when the host does not already
+grep -qw node1 /etc/hosts || echo "127.0.0.1 node1" | sudo tee -a /etc/hosts
 export JAVA_HOME="${JAVA_HOME}"
 env
 function start_storm_process() {

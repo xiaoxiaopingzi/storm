@@ -21,11 +21,13 @@ package org.apache.storm.daemon.logviewer.utils;
 import com.codahale.metrics.Histogram;
 import com.codahale.metrics.Meter;
 
+import jakarta.ws.rs.core.Response;
+
 import java.io.IOException;
+import java.nio.channels.Channels;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-
-import javax.ws.rs.core.Response;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.storm.metric.StormMetricsRegistry;
@@ -36,6 +38,7 @@ public class LogFileDownloader {
     private final Meter numFileDownloadExceptions;
     private final Path logRoot;
     private final Path daemonLogRoot;
+    private final WorkerLogs workerLogs;
     private final ResourceAuthorizer resourceAuthorizer;
 
     /**
@@ -43,13 +46,15 @@ public class LogFileDownloader {
      *
      * @param logRoot root worker log directory
      * @param daemonLogRoot root daemon log directory
+     * @param workerLogs {@link WorkerLogs}
      * @param resourceAuthorizer {@link ResourceAuthorizer}
      * @param metricsRegistry The logviewer metrics registry
      */
-    public LogFileDownloader(String logRoot, String daemonLogRoot, ResourceAuthorizer resourceAuthorizer,
-        StormMetricsRegistry metricsRegistry) {
+    public LogFileDownloader(String logRoot, String daemonLogRoot, WorkerLogs workerLogs,
+        ResourceAuthorizer resourceAuthorizer, StormMetricsRegistry metricsRegistry) {
         this.logRoot = Paths.get(logRoot).toAbsolutePath().normalize();
         this.daemonLogRoot = Paths.get(daemonLogRoot).toAbsolutePath().normalize();
+        this.workerLogs = workerLogs;
         this.resourceAuthorizer = resourceAuthorizer;
         this.fileDownloadSizeDistMb = metricsRegistry.registerHistogram("logviewer:download-file-size-rounded-MB");
         this.numFileDownloadExceptions = metricsRegistry.registerMeter(ExceptionMeterNames.NUM_FILE_DOWNLOAD_EXCEPTIONS);
@@ -76,22 +81,50 @@ public class LogFileDownloader {
             //Prevent daemon log reads from pathing into worker logs
             return LogviewerResponseBuilder.buildResponsePageNotFound();
         }
-        
-        if (file.toFile().exists()) {
-            if (isDaemon || resourceAuthorizer.isUserAllowedToAccessFile(user, fileName)) {
-                fileDownloadSizeDistMb.update(Math.round((double) file.toFile().length() / FileUtils.ONE_MB));
+
+        //A worker log must be a direct child of a port directory and must not be reached through a symbolic link,
+        //otherwise it is answered like a missing file
+        boolean exists = isDaemon ? file.toFile().exists() : LogFilePaths.isServableWorkerFile(rootDir, file);
+        if (exists) {
+            if (isDaemon ? resourceAuthorizer.isUserAllowedToAccessDaemonFile(user)
+                    : resourceAuthorizer.isUserAllowedToAccessFile(user, fileName)) {
+                if (!isDaemon) {
+                    //Only widen the permission of a worker log once the request is known to be served
+                    workerLogs.setLogFilePermission(fileName);
+                }
                 String downloadedFileName;
-                Path pathRelativeToRootDir = rootDir.relativize(file);
-                if (isDaemon || pathRelativeToRootDir.getNameCount() != 3) {
+                if (isDaemon) {
                     downloadedFileName = host + "-" + rawFile.getFileName();
                 } else {
                     //host-topoId-port-fileName
+                    Path pathRelativeToRootDir = rootDir.relativize(file);
                     downloadedFileName = host + "-"
                         + pathRelativeToRootDir.getName(0) + "-"
                         + pathRelativeToRootDir.getName(1) + "-"
                         + pathRelativeToRootDir.getName(2);
                 }
-                return LogviewerResponseBuilder.buildDownloadFile(downloadedFileName, file.toFile(), numFileDownloadExceptions);
+                //A daemon log may be a symbolic link, a worker log is opened without following one
+                SeekableByteChannel channel;
+                try {
+                    channel = isDaemon ? LogFilePaths.openForReading(file, true) : LogFilePaths.openWorkerFile(rootDir, file);
+                } catch (IOException e) {
+                    numFileDownloadExceptions.mark();
+                    throw e;
+                }
+                if (channel == null) {
+                    //The log file was removed or replaced by a symbolic link after the check
+                    return LogviewerResponseBuilder.buildResponsePageNotFound();
+                }
+                long size;
+                try {
+                    size = channel.size();
+                } catch (IOException e) {
+                    channel.close();
+                    numFileDownloadExceptions.mark();
+                    throw e;
+                }
+                fileDownloadSizeDistMb.update(Math.round((double) size / FileUtils.ONE_MB));
+                return LogviewerResponseBuilder.buildDownloadFile(downloadedFileName, Channels.newInputStream(channel));
             } else {
                 return LogviewerResponseBuilder.buildResponseUnauthorizedUser(user);
             }

@@ -12,11 +12,13 @@
 
 package org.apache.storm.streams;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import org.apache.storm.shade.com.google.common.collect.Multimap;
-import org.apache.storm.shade.org.jgrapht.DirectedGraph;
+import org.apache.storm.shade.org.jgrapht.Graph;
 import org.apache.storm.shade.org.jgrapht.graph.DefaultDirectedGraph;
 import org.apache.storm.streams.operations.aggregators.Count;
 import org.apache.storm.streams.processors.AggregateProcessor;
@@ -35,10 +37,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 /**
- * Unit test for {@link WindowedProcessorBolt}
+ * Unit test for {@link WindowedProcessorBolt}.
  */
 public class WindowedProcessorBoltTest {
     TopologyContext mockTopologyContext;
@@ -47,7 +47,7 @@ public class WindowedProcessorBoltTest {
     Tuple mockTuple1;
     Tuple mockTuple2;
     Tuple mockTuple3;
-    DirectedGraph<Node, Edge> graph;
+    Graph<Node, Edge> graph;
     Multimap<String, ProcessorNode> mockStreamToProcessors;
 
     @BeforeEach
@@ -78,9 +78,11 @@ public class WindowedProcessorBoltTest {
     private void setUpWindowedProcessorBolt(Processor<?> processor, Window<?, ?> window) {
         ProcessorNode node = new ProcessorNode(processor, "outputstream", new Fields("value"));
         node.setWindowed(true);
-        Mockito.when(mockStreamToProcessors.get(Mockito.anyString())).thenReturn(Collections.singletonList(node));
-        Mockito.when(mockStreamToProcessors.keySet()).thenReturn(Collections.singleton("inputstream"));
-        graph = new DefaultDirectedGraph<>(new StreamsEdgeFactory());
+        Mockito.when(mockStreamToProcessors.get(Mockito.anyString())).thenReturn(Collections
+                .singletonList(node));
+        Mockito.when(mockStreamToProcessors.keySet()).thenReturn(Collections
+                .singleton("inputstream"));
+        graph = new DefaultDirectedGraph<>(null, null, false);
         graph.addVertex(node);
         bolt = new WindowedProcessorBolt("bolt1", graph, Collections.singletonList(node), window);
         bolt.setStreamToInitialProcessors(mockStreamToProcessors);

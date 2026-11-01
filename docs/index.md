@@ -5,7 +5,7 @@ documentation: true
 ---
 ### Basics of Storm
 
-* [Javadoc](javadocs/index.html)
+* [Javadoc](https://javadoc.io/doc/org.apache.storm/storm-client/3.0.0/index.html)
 * [Tutorial](Tutorial.html)
 * [Concepts](Concepts.html)
 * [Scheduler](Storm-Scheduler.html)
@@ -38,18 +38,6 @@ We're also notifying it via annotating classes with marker interface `@Interface
 
 * [Streams API](Stream-API.html)
 
-#### SQL
-
-The Storm SQL integration allows users to run SQL queries over streaming data in Storm.  
-
-NOTE: Storm SQL is an `experimental` feature, so the internals of Storm SQL and supported features are subject to change. 
-But small change will not affect the user experience. We will notify the user when breaking UX change is introduced.
-
-* [Storm SQL overview](storm-sql.html)
-* [Storm SQL example](storm-sql-example.html)
-* [Storm SQL reference](storm-sql-reference.html)
-* [Storm SQL internal](storm-sql-internal.html)
-
 #### Flux
 
 * [Flux Data Driven Topology Builder](flux.html)
@@ -69,6 +57,9 @@ But small change will not affect the user experience. We will notify the user wh
 * [Daemon Metrics/Monitoring](ClusterMetrics.html)
 * [Windows users guide](windows-users-guide.html)
 * [Classpath handling](Classpath-handling.html)
+* [Binary Distributions (full vs. lite)](Binary-distributions.html)
+* [Cluster State Serialization](Cluster-State-Serialization.html)
+* [Local Development Cluster](Local-dev-cluster.html)
 
 ### Intermediate
 
@@ -80,9 +71,11 @@ But small change will not affect the user experience. We will notify the user wh
 * [Hooks](Hooks.html)
 * [Metrics (Deprecated)](Metrics.html)
 * [Metrics V2](metrics_v2.html)
+* [Tracing](Tracing.html)
 * [State Checkpointing](State-checkpointing.html)
 * [Windowing](Windowing.html)
 * [Joining Streams](Joins.html)
+* [JitterAwareStreamGrouping](JitterAwareStreamGrouping.html)
 * [Blobstore(Distcache)](distcache-blobstore.html)
 
 ### Debugging
@@ -92,24 +85,15 @@ But small change will not affect the user experience. We will notify the user wh
 * [Event Logging](Eventlogging.html)
 
 ### Integration With External Systems, and Other Libraries
-* [Apache Kafka Integration](storm-kafka-client.html)
+* [Kafka Consumer (storm-kafka-client)](storm-kafka-client.html)
+* [Kafka Migration Tool (storm-kafka-migration)](https://github.com/apache/storm/tree/master/external/storm-kafka-migration)
+* [Kafka Monitoring (storm-kafka-monitor)](https://github.com/apache/storm/tree/master/external/storm-kafka-monitor)
 * [Apache HBase Integration](storm-hbase.html)
 * [Apache HDFS Integration](storm-hdfs.html)
-* [Apache Hive Integration](storm-hive.html)
-* [Apache Solr Integration](storm-solr.html)
-* [Apache Cassandra Integration](storm-cassandra.html)
-* [Apache RocketMQ Integration](storm-rocketmq.html)
+* [Apache Iceberg Integration](storm-iceberg.html)
 * [JDBC Integration](storm-jdbc.html)
 * [JMS Integration](storm-jms.html)
-* [MQTT Integration](storm-mqtt.html)
 * [Redis Integration](storm-redis.html)
-* [Event Hubs Intergration](storm-eventhubs.html)
-* [Elasticsearch Integration](storm-elasticsearch.html)
-* [Mongodb Integration](storm-mongodb.html)
-* [OpenTSDB Integration](storm-opentsdb.html)
-* [Kinesis Integration](storm-kinesis.html)
-* [PMML Integration](storm-pmml.html)
-* [Kestrel Integration](Kestrel-and-Storm.html)
 
 #### Container, Resource Management System Integration
 

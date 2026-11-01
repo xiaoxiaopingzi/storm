@@ -15,9 +15,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Usage: release_notes.py <version> > RELEASE_NOTES.html
+"""Usage: release_notes.py <milestone_id_from_github> > RELEASE_NOTES.html
 
-Depends on https://pypi.python.org/pypi/jira/, please use pip to install this module.
+Depends on "requests", please use pip to install this module. "markdown" is only needed when a pull request has an
+"Upgrade notes" section.
 
 Generates release notes for a Storm release by generating an HTML doc containing some introductory information about the
  release with links to the Storm docs followed by a list of issues resolved in the release. The script will fail if it finds
@@ -26,105 +27,209 @@ Generates release notes for a Storm release by generating an HTML doc containing
 
 """
 
-from jira import JIRA
-import itertools, sys
+import html
+import re
+import requests
+import sys
+import os
 
 if len(sys.argv) < 2:
-    print("Usage: release_notes.py <version>", file=sys.stderr)
+    print("Usage: release_notes.py <milestone_id>", file=sys.stderr)
     sys.exit(1)
 
-version = sys.argv[1]
+# GitHub configuration
+GITHUB_API_BASE_URL = "https://api.github.com"
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-JIRA_BASE_URL = 'https://issues.apache.org/jira'
-MAX_RESULTS = 100 # This is constrained for cloud instances so we need to fix this value
+if not GITHUB_TOKEN:
+    print("Error: GITHUB_TOKEN environment variable not set.", file=sys.stderr)
+    sys.exit(1)
+
+# Input arguments
+owner = "apache"
+repo = "storm"
+milestone = sys.argv[1]  # Milestone ID
 
 
-def get_issues(jira, query, **kwargs):
+headers = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3+json"
+}
+
+def get_milestone_title(owner, repo, milestone_number):
     """
-    Get all issues matching the JQL query from the JIRA instance. This handles expanding paginated results for you.
-    Any additional keyword arguments are forwarded to the JIRA.search_issues call.
+    Fetch the title of a specific milestone by its number.
     """
-    results = []
-    startAt = 0
-    new_results = None
-    while new_results is None or len(new_results) == MAX_RESULTS:
-        new_results = jira.search_issues(query, startAt=startAt, maxResults=MAX_RESULTS, **kwargs)
-        results += new_results
-        startAt += len(new_results)
-    return results
+    url = f"{GITHUB_API_BASE_URL}/repos/{owner}/{repo}/milestones/{milestone_number}"
+    response = requests.get(url, headers=headers)
 
+    if response.status_code != 200:
+        print(f"Failed to fetch milestone: {response.status_code} {response.reason}", file=sys.stderr)
+        sys.exit(1)
+
+    milestone = response.json()
+    return milestone["title"]
+
+def get_issues(owner, repo, milestone):
+    """
+    Fetch all issues for a given milestone from a GitHub repository.
+    """
+    issues_url = f"{GITHUB_API_BASE_URL}/repos/{owner}/{repo}/issues"
+    params = {
+        "milestone": milestone,
+        "state": "all",  # Include both open and closed issues
+        "per_page": 100
+    }
+
+    issues = []
+    while issues_url:
+        response = requests.get(issues_url, headers=headers, params=params)
+        if response.status_code != 200:
+            print(f"Failed to fetch issues: {response.status_code} {response.reason}", file=sys.stderr)
+            sys.exit(1)
+
+        data = response.json()
+        issues.extend(data)
+        # Get next page URL from 'Link' header if available
+        issues_url = response.links.get("next", {}).get("url")
+
+    return issues
 
 def issue_link(issue):
-    return "%s/browse/%s" % (JIRA_BASE_URL, issue.key)
+    return issue["html_url"]
 
+HEADING = re.compile(r"^(#{1,6})[ \t]+(\S.*?)[ \t]*$")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# The hint of .github/pull_request_template.md. It does not count as a note.
+TEMPLATE_HINT = ("*(Only for breaking or behaviour changes: what changes for users and what they must do. "
+                 "Otherwise, leave this section as it is or delete it.)*")
+
+def extract_upgrade_notes(issue):
+    """
+    Return the text under the "Upgrade notes" heading of the issue body, or None if there is none.
+    The section ends at the next heading of the same or a higher level. Headings inside fenced code
+    blocks are ignored.
+    """
+    level = None  # level of the "Upgrade notes" heading, once found
+    fence = None  # marker of the open code fence, if any
+    section = []
+    for line in (issue.get("body") or "").replace("\r\n", "\n").split("\n"):
+        marker = FENCE.match(line)
+        if fence:
+            if marker and set(line.strip()) == {fence[0]} and len(line.strip()) >= len(fence):
+                fence = None
+        elif marker:
+            fence = marker.group(1)
+        else:
+            heading = HEADING.match(line)
+            if heading:
+                if level is not None and len(heading.group(1)) <= level:
+                    break
+                if level is None and heading.group(2).lower() == "upgrade notes":
+                    level = len(heading.group(1))
+                    continue
+        if level is not None:
+            section.append(line)
+    return "\n".join(line for line in section if line.strip() != TEMPLATE_HINT).strip() or None
+
+def note_to_html(note):
+    """
+    Render the Markdown of an upgrade note as HTML. HTML tags in the note are shown as text, not passed through.
+    """
+    import markdown  # imported here so that the script runs without it when no pull request has a note
+    md = markdown.Markdown(extensions=["fenced_code"])
+    md.preprocessors.deregister("html_block")
+    md.inlinePatterns.deregister("html")
+    # only web, mail and in-page targets are kept, so a link like [x](javascript:...) does not end up in the page
+    return re.sub(r'(<(?:a|img)\s[^>]*?\b)(href|src)="(?!https?://|mailto:|#)[^"]*"', r'\1\2="#"', md.convert(note),
+                  flags=re.IGNORECASE)
 
 if __name__ == "__main__":
-    apache = JIRA(JIRA_BASE_URL)
-    issues = get_issues(apache, 'project=STORM and fixVersion=%s' % version)
+    issues = get_issues(owner, repo, milestone)
+
     if not issues:
-        print("Didn't find any issues for the target fix version", file=sys.stderr)
+        print("No issues found for the specified milestone.", file=sys.stderr)
         sys.exit(1)
 
-    # Some resolutions, including a lack of resolution, indicate that the bug hasn't actually been addressed and we
-    # shouldn't even be able to create a release until they are fixed
-    UNRESOLVED_RESOLUTIONS = [None,
-                              "Unresolved",
-                              "Duplicate",
-                              "Invalid",
-                              "Not A Problem",
-                              "Not A Bug",
-                              "Won't Fix",
-                              "Incomplete",
-                              "Cannot Reproduce",
-                              "Later",
-                              "Works for Me",
-                              "Workaround",
-                              "Information Provided"
-                              ]
-    unresolved_issues = [issue for issue in issues
-                         if issue.fields.resolution in UNRESOLVED_RESOLUTIONS
-                         or issue.fields.resolution.name in UNRESOLVED_RESOLUTIONS]
+    def is_truly_open(issue):
+        if issue["state"] == "closed":
+            return False
+        # Re-fetch the issue directly to guard against stale index returning issues
+        # whose milestone was already removed (known GitHub API inconsistency)
+        url = f"{GITHUB_API_BASE_URL}/repos/{owner}/{repo}/issues/{issue['number']}"
+        r = requests.get(url, headers=headers)
+        if r.status_code != 200:
+            return True  # conservative: treat as unresolved if we can't verify
+        return r.json().get("milestone") is not None
+
+    unresolved_issues = [issue for issue in issues if is_truly_open(issue)]
     if unresolved_issues:
-        print("The release is not completed since unresolved issues or improperly resolved issues were found still "
-              "tagged with this release as the fix version:", file=sys.stderr)
+        print("The release is not completed since unresolved issues were found:", file=sys.stderr)
         for issue in unresolved_issues:
-            print("Unresolved issue: %15s %20s %s" % (issue.key, issue.fields.resolution, issue_link(issue)),
-                  file=sys.stderr)
-        print('', file=sys.stderr)
-        print("Note that for some resolutions, you should simply remove the fix version as they have not been truly "
-              "fixed in this release.", file=sys.stderr)
+            print(f"Unresolved issue: {issue['number']:5d} {issue['state']:10s} {issue_link(issue)}", file=sys.stderr)
         sys.exit(1)
 
-    # Get list of (issue type, [issues]) sorted by the issue ID type, with each subset of issues sorted by their key so
-    # they are in increasing order of bug #. To get a nice ordering of the issue types we customize the key used to sort
-    # by issue type a bit to ensure features and improvements end up first.
-    def issue_type_key(issue):
-        if issue.fields.issuetype.name == 'New Feature':
-            return -2
-        if issue.fields.issuetype.name == 'Improvement':
-            return -1
-        return int(issue.fields.issuetype.id)
+    IGNORED_LABELS = {"github_actions", "skip-changelog"}
 
-    by_group = [(k, sorted(g, key=lambda issue: issue.id))
-                for k, g in itertools.groupby(sorted(issues, key=issue_type_key),
-                                              lambda issue: issue.fields.issuetype.name)]
+    ignored = [
+        issue for issue in issues
+        if any(l["name"] in IGNORED_LABELS for l in issue["labels"])
+    ]
+    if ignored:
+        print(f"Ignoring {len(ignored)} issue(s) with excluded labels ({', '.join(IGNORED_LABELS)}):", file=sys.stderr)
+        for issue in ignored:
+            matched = [l["name"] for l in issue["labels"] if l["name"] in IGNORED_LABELS]
+            print(f"  #{issue['number']} [{', '.join(matched)}] - {issue['title']}", file=sys.stderr)
+
+    issues = [issue for issue in issues if issue not in ignored]
+
+    # Group issues by labels, assigning each issue to only its first label
+    # to avoid duplicates when an issue has multiple labels
+    issues_by_label = {}
+    unlabeled_issues = []
+    for issue in issues:
+        if issue["labels"]:
+            primary_label = issue["labels"][0]["name"]
+            issues_by_label.setdefault(primary_label, []).append(issue)
+        else:
+            unlabeled_issues.append(issue)
+
+    # Add unlabeled issues under a special "No Label" category
+    if unlabeled_issues:
+        issues_by_label["Uncategorized"] = unlabeled_issues
+
     issues_str = "\n".join([
-        f"\n\t<h2>{itype}</h2>" +
+        f"\n\t<h2>{label}</h2>" +
         f"\n\t<ul>" +
-        '\n\t\t'.join([f'<li>[<a href="{issue_link(issue)}">{issue.key}</a>] - {issue.fields.summary}</li>' for issue in issues]) +
+        "\n\t\t".join([
+            f'<li>[<a href="{issue_link(issue)}">#{issue["number"]}</a>] - {html.escape(issue["title"], quote=False)}</li>'
+            for issue in issues
+        ]) +
         "\n\t</ul>"
-        for itype, issues in by_group])
+        for label, issues in issues_by_label.items()
+    ])
+
+    # Pull requests can describe breaking or behaviour changes under an "Upgrade notes" heading in their description
+    upgrade_notes = [(issue, extract_upgrade_notes(issue)) for issue in issues]
+    upgrade_notes = [(issue, note) for issue, note in upgrade_notes if note]
+    if upgrade_notes:
+        issues_str = "\n\t<h2>Upgrade notes</h2>\n\t<ul>" + "\n\t\t".join([
+            f'<li>[<a href="{issue_link(issue)}">#{issue["number"]}</a>] - {html.escape(issue["title"], quote=False)}'
+            f'\n{note_to_html(note)}</li>'
+            for issue, note in upgrade_notes
+        ]) + "\n\t</ul>" + issues_str
+
+    version = get_milestone_title(owner, repo, milestone)
 
     print(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Storm {version} Release Notes</title>
+<title>Release Notes for Apache Storm {version}</title>
 </head>
 <body>
-<h1>Release Notes for Storm {version}</h1>
-<p>JIRA issues addressed in the {version} release of Storm. Documentation for this
-    release is available at the <a href="https://storm.apache.org/">Apache Storm project site</a>.</p>
+<h1>Release Notes for Apache Storm {version}</h1>
+<p>Issues addressed in {version}.</p>
 {issues_str}
 </body>
 </html>""")

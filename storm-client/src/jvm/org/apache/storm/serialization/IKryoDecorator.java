@@ -13,7 +13,25 @@
 package org.apache.storm.serialization;
 
 import com.esotericsoftware.kryo.Kryo;
+import java.util.Map;
 
 public interface IKryoDecorator {
-    void decorate(Kryo k);
+    /**
+     * Decorate the Kryo instance with custom serializations.
+     *
+     * @deprecated use {@link #decorate(Kryo, Map)} instead.
+     */
+    @Deprecated(since = "2.8.6", forRemoval = true)
+    default void decorate(Kryo k) {
+    }
+
+    /**
+     * Decorate the Kryo instance with custom serializations.
+     *
+     * @param k the Kryo instance to decorate
+     * @param conf the topology configuration
+     */
+    default void decorate(Kryo k, Map<String, Object> conf) {
+        decorate(k);
+    }
 }

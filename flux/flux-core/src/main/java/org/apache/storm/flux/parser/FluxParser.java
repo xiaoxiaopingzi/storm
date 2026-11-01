@@ -36,6 +36,7 @@ import org.apache.storm.flux.model.SpoutDef;
 import org.apache.storm.flux.model.TopologyDef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -200,7 +201,7 @@ public class FluxParser {
         topologyDescription.putListPropertyType("bolts", BoltDef.class);
         topologyDescription.putListPropertyType("includes", IncludeDef.class);
 
-        Constructor constructor = new Constructor(TopologyDef.class);
+        Constructor constructor = new Constructor(TopologyDef.class, new LoaderOptions());
         constructor.addTypeDescription(topologyDescription);
 
         Yaml yaml = new Yaml(constructor);
@@ -218,7 +219,7 @@ public class FluxParser {
      */
     private static TopologyDef processIncludes(Yaml yaml, TopologyDef topologyDef, Properties properties, boolean envSub)
             throws IOException {
-        //TODO support multiple levels of includes
+        //TODO: support multiple levels of includes
         if (topologyDef.getIncludes() != null) {
             for (IncludeDef include : topologyDef.getIncludes()) {
                 TopologyDef includeTopologyDef = null;
@@ -239,7 +240,7 @@ public class FluxParser {
 
                 // config
                 if (includeTopologyDef.getConfig() != null) {
-                    //TODO move this logic to the model class
+                    //TODO: move this logic to the model class
                     Map<String, Object> config = topologyDef.getConfig();
                     Map<String, Object> includeConfig = includeTopologyDef.getConfig();
                     if (override) {
@@ -268,7 +269,7 @@ public class FluxParser {
                     topologyDef.addAllSpouts(includeTopologyDef.getSpouts(), override);
                 }
                 //stream overrides
-                //TODO streams should be uniquely identifiable
+                //TODO: streams should be uniquely identifiable
                 if (includeTopologyDef.getStreams() != null) {
                     topologyDef.addAllStreams(includeTopologyDef.getStreams(), override);
                 }

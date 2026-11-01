@@ -18,16 +18,23 @@
 
 package org.apache.storm.daemon.drpc;
 
+import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.security.auth.Subject;
 import org.apache.storm.Config;
+import org.apache.storm.DaemonConfig;
 import org.apache.storm.generated.AuthorizationException;
 import org.apache.storm.generated.DRPCExceptionType;
 import org.apache.storm.generated.DRPCExecutionException;
@@ -38,11 +45,15 @@ import org.apache.storm.security.auth.SingleUserPrincipal;
 import org.apache.storm.security.auth.authorizer.DRPCSimpleACLAuthorizer;
 import org.apache.storm.security.auth.authorizer.DRPCSimpleACLAuthorizer.AclFunctionEntry;
 import org.apache.storm.security.auth.authorizer.DenyAuthorizer;
+import org.apache.storm.security.auth.authorizer.ImpersonationAuthorizer;
 import org.apache.storm.utils.Time;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -66,18 +77,25 @@ public class DRPCTest {
         exec.shutdownNow();
     }
 
-    public static DRPCRequest getNextAvailableRequest(DRPC server, String func) throws Exception {
-        DRPCRequest request = null;
-        long timedout = System.currentTimeMillis() + 5_000;
-        while (System.currentTimeMillis() < timedout) {
-            request = server.fetchRequest(func);
-            if (request != null && request.get_request_id() != null && !request.get_request_id().isEmpty()) {
-                return request;
-            }
-            Thread.sleep(1);
-        }
-        fail("Test timed out waiting for a request on " + func);
-        return request;
+    @AfterEach
+    public void resetContext() {
+        ReqContext.reset();
+    }
+
+    public static DRPCRequest getNextAvailableRequest(DRPC server, String func) {
+        AtomicReference<DRPCRequest> result = new AtomicReference<>();
+        Awaitility.await("DRPC request on " + func)
+            .atMost(5, TimeUnit.SECONDS)
+            .pollInterval(1, TimeUnit.MILLISECONDS)
+            .until(() -> {
+                DRPCRequest req = server.fetchRequest(func);
+                if (req != null && req.get_request_id() != null && !req.get_request_id().isEmpty()) {
+                    result.set(req);
+                    return true;
+                }
+                return false;
+            });
+        return result.get();
     }
 
     @Test
@@ -133,6 +151,107 @@ public class DRPCTest {
             assertNotNull(request);
             assertEquals("", request.get_request_id());
             assertEquals("", request.get_func_args());
+        }
+    }
+
+    @Test
+    public void testQueuesAreRemovedWhenEmpty() throws Exception {
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), null, 1000)) {
+            //Fetching for a function nothing was ever submitted for must not leave state behind
+            DRPCRequest nothing = server.fetchRequest("never-registered");
+            assertNotNull(nothing);
+            assertEquals("", nothing.get_request_id());
+            assertEquals(0, server.getNumTrackedFunctions());
+
+            //A registered function is still served repeatedly, and is not left behind once idle
+            for (int i = 0; i < 3; i++) {
+                Future<String> found = exec.submit(() -> server.executeBlocking("testing", "test"));
+                DRPCRequest request = getNextAvailableRequest(server, "testing");
+                assertNotNull(request);
+                server.returnResult(request.get_request_id(), "tested");
+                assertEquals("tested", found.get(10, TimeUnit.MILLISECONDS));
+            }
+            assertEquals(0, server.getNumTrackedFunctions());
+
+            //Nor is a function whose only request timed out.  The timer thread fails the request
+            // before it drops the queue, so the caller can return first; wait for the drop instead
+            // of racing it, with a hard timeout so a real leak still fails the test.
+            try {
+                server.executeBlocking("timing-out", "test");
+                fail("Should have timed out....");
+            } catch (DRPCExecutionException e) {
+                assertEquals(DRPCExceptionType.SERVER_TIMEOUT, e.get_type());
+            }
+            Awaitility.await("DRPC queue for timing-out to be dropped")
+                .atMost(5, TimeUnit.SECONDS)
+                .pollInterval(1, TimeUnit.MILLISECONDS)
+                .until(() -> server.getNumTrackedFunctions() == 0);
+        }
+    }
+
+    @Test
+    public void testConcurrentExecuteAndFetchLosesNoRequests() throws Exception {
+        //A bounded pool of 16 threads is what keeps this cheap: executeBlocking() parks its caller,
+        // so an unbounded pool would need one live thread per outstanding request.  The request
+        // count costs no threads at all, and is what gives the stress test its power.  Measured
+        // against a fetchRequest() whose poll/remove escapes the per-function compute lock, the
+        // lost request was caught 1 run in 25 at 200 requests, 3 in 10 at 2000 and 9 in 10 at 5000,
+        // while a correct server still serves all 5000 in about a second with every core busy.
+        final int numRequests = 5000;
+        final int numThreads = 16;
+        final long deadlineMs = 30_000;
+        //A timeout far beyond the test deadline, so the cleanup timer never reaps a live request.
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), null, 300_000)) {
+            ExecutorService submitters = Executors.newFixedThreadPool(numThreads);
+            try {
+                List<Future<String>> futures = new ArrayList<>(numRequests);
+                for (int i = 0; i < numRequests; i++) {
+                    final String args = "test-" + i;
+                    futures.add(submitters.submit(() -> server.executeBlocking("testing", args)));
+                }
+
+                Set<String> servedIds = new HashSet<>();
+                long deadline = Time.currentTimeMillis() + deadlineMs;
+                int emptyFetches = 0;
+                while (servedIds.size() < numRequests) {
+                    if (Time.currentTimeMillis() > deadline) {
+                        fail("Only served " + servedIds.size() + " of " + numRequests
+                             + " requests within " + deadlineMs + "ms, a request was lost");
+                    }
+                    DRPCRequest req = server.fetchRequest("testing");
+                    assertNotNull(req);
+                    String id = req.get_request_id();
+                    if (id.isEmpty()) {
+                        //Nothing to serve right now.  Spin at first, so fetches keep interleaving
+                        // tightly with the submitting threads, and only back off if this goes on
+                        // for a long time (a regression, which the deadline above then fails).
+                        if (++emptyFetches > 10_000) {
+                            TimeUnit.MILLISECONDS.sleep(1);
+                        } else {
+                            Thread.onSpinWait();
+                        }
+                        continue;
+                    }
+                    emptyFetches = 0;
+                    assertTrue(servedIds.add(id), "Request " + id + " was fetched more than once");
+                    server.returnResult(id, "tested-" + id);
+                }
+
+                Set<String> results = new HashSet<>();
+                for (Future<String> f : futures) {
+                    long left = deadline - Time.currentTimeMillis();
+                    assertTrue(left > 0, "Ran out of time waiting for the blocked callers");
+                    assertTrue(results.add(f.get(left, TimeUnit.MILLISECONDS)), "Duplicate result returned");
+                }
+                assertEquals(numRequests, results.size());
+                for (String id : servedIds) {
+                    assertTrue(results.contains("tested-" + id), "No caller got the result for " + id);
+                }
+                //Nothing is waiting any more, so no per-function queue may be left behind
+                assertEquals(0, server.getNumTrackedFunctions());
+            } finally {
+                submitters.shutdownNow();
+            }
         }
     }
 
@@ -248,6 +367,203 @@ public class DRPCTest {
         DRPC.checkAuthorization(jt, auth, "execute", "not_jump");
         DRPC.checkAuthorization(jc, auth, "execute", "not_jump");
         DRPC.checkAuthorization(other, auth, "execute", "not_jump");
+    }
+
+    /**
+     * Only "alice" may execute the function "sensitive".
+     */
+    public static class SensitiveFunctionAclAuthorizer extends DRPCSimpleACLAuthorizer {
+        @Override
+        protected Map<String, AclFunctionEntry> readAclFromConfig() {
+            Map<String, AclFunctionEntry> acl = new HashMap<>();
+            acl.put("sensitive", new AclFunctionEntry(Collections.singletonList("alice"), "sensitive_topo"));
+            return acl;
+        }
+    }
+
+    private static Map<String, Object> impersonationConf(boolean withImpersonationAuthorizer, boolean grantBob) {
+        return impersonationConf(withImpersonationAuthorizer, grantBob, "*");
+    }
+
+    private static Map<String, Object> impersonationConf(boolean withImpersonationAuthorizer, boolean grantBob, String bobHost) {
+        Map<String, Object> conf = new HashMap<>();
+        conf.put(DaemonConfig.DRPC_AUTHORIZER, SensitiveFunctionAclAuthorizer.class.getName());
+        conf.put(Config.DRPC_AUTHORIZER_ACL_STRICT, true);
+        conf.put(Config.STORM_PRINCIPAL_TO_LOCAL_PLUGIN, DefaultPrincipalToLocal.class.getName());
+        if (withImpersonationAuthorizer) {
+            conf.put(DaemonConfig.NIMBUS_IMPERSONATION_AUTHORIZER, ImpersonationAuthorizer.class.getName());
+            Map<String, Map<String, List<String>>> impersonationAcl = new HashMap<>();
+            if (grantBob) {
+                Map<String, List<String>> bobAcl = new HashMap<>();
+                bobAcl.put("groups", Collections.singletonList("*"));
+                bobAcl.put("hosts", Collections.singletonList(bobHost));
+                impersonationAcl.put("bob", bobAcl);
+            }
+            conf.put(Config.NIMBUS_IMPERSONATION_ACL, impersonationAcl);
+        }
+        return conf;
+    }
+
+    /**
+     * Sets up the current request context for {@code user}, optionally as {@code realUser} impersonating {@code user}.
+     */
+    private static void setCurrentUser(String user, String realUser) {
+        setCurrentUser(user, realUser, InetAddress.getLoopbackAddress());
+    }
+
+    private static void setCurrentUser(String user, String realUser, InetAddress remoteAddress) {
+        Subject subject = new Subject();
+        subject.getPrincipals().add(new SingleUserPrincipal(user));
+        ReqContext context = ReqContext.context();
+        context.setSubject(subject);
+        context.setRealPrincipal(realUser == null ? null : new SingleUserPrincipal(realUser));
+        context.setRemoteAddress(remoteAddress);
+    }
+
+    private static void executeSensitive(DRPC server) throws Exception {
+        server.execute("sensitive", "args", BlockingOutstandingRequest.FACTORY);
+    }
+
+    @Test
+    public void testImpersonationDeniedByImpersonationAuthorizer() throws Exception {
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(true, false))) {
+            setCurrentUser("alice", "bob");
+            assertTrue(ReqContext.context().isImpersonating());
+            assertThrows(() -> executeSensitive(server), AuthorizationException.class);
+            assertEquals(0, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testImpersonationPermittedByImpersonationAuthorizer() throws Exception {
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(true, true))) {
+            setCurrentUser("alice", "bob");
+            executeSensitive(server);
+            assertEquals(1, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testNoImpersonationAllowedUser() throws Exception {
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(true, false))) {
+            setCurrentUser("alice", null);
+            executeSensitive(server);
+            assertEquals(1, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testNoImpersonationOtherUserDenied() throws Exception {
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(true, true))) {
+            setCurrentUser("bob", null);
+            assertThrows(() -> executeSensitive(server), AuthorizationException.class);
+            assertEquals(0, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testImpersonationFromListedHostPermitted() throws Exception {
+        InetAddress loopback = InetAddress.getLoopbackAddress();
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(true, true, loopback.getHostAddress()))) {
+            setCurrentUser("alice", "bob", loopback);
+            executeSensitive(server);
+            assertEquals(1, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testImpersonationWithUnknownRemoteAddressDeniedForHostList() throws Exception {
+        InetAddress loopback = InetAddress.getLoopbackAddress();
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(true, true, loopback.getHostAddress()))) {
+            setCurrentUser("alice", "bob", null);
+            assertThrows(() -> executeSensitive(server), AuthorizationException.class);
+            assertEquals(0, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testImpersonationWithoutImpersonationAuthorizer() throws Exception {
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(false, false))) {
+            setCurrentUser("alice", "bob");
+            executeSensitive(server);
+            assertEquals(1, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testImpersonationDenialNamesFunction() throws Exception {
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(true, false))) {
+            setCurrentUser("alice", "bob");
+            try {
+                executeSensitive(server);
+                fail("Expected an AuthorizationException");
+            } catch (AuthorizationException e) {
+                assertTrue(e.get_msg().contains("function 'sensitive'"), e.get_msg());
+            }
+        }
+    }
+
+    /**
+     * Sets up the current request context for an unauthenticated request asking to run as {@code user}.
+     */
+    private static void setUnauthenticatedImpersonation(String user) {
+        setCurrentUser(user, null);
+        ReqContext.context().setRealPrincipal(new SingleUserPrincipal(null));
+    }
+
+    @Test
+    public void testUnauthenticatedImpersonationWithoutImpersonationAuthorizerDenied() throws Exception {
+        Map<String, Object> conf = new HashMap<>();
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), conf)) {
+            setUnauthenticatedImpersonation("alice");
+            assertTrue(ReqContext.context().isImpersonating());
+            try {
+                executeSensitive(server);
+                fail("Expected an AuthorizationException");
+            } catch (AuthorizationException e) {
+                assertTrue(e.get_msg().contains("function 'sensitive'"), e.get_msg());
+                assertTrue(e.get_msg().contains("doAsUser 'alice'"), e.get_msg());
+            }
+            assertEquals(0, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testUnauthenticatedImpersonationWithEmptyNameDenied() throws Exception {
+        Map<String, Object> conf = new HashMap<>();
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), conf)) {
+            setCurrentUser("alice", "");
+            assertTrue(ReqContext.context().isImpersonating());
+            assertThrows(() -> executeSensitive(server), AuthorizationException.class);
+            assertEquals(0, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testUnauthenticatedRequestWithoutImpersonation() throws Exception {
+        Map<String, Object> conf = new HashMap<>();
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), conf)) {
+            ReqContext context = ReqContext.context();
+            context.setSubject(null);
+            context.setRealPrincipal(null);
+            assertFalse(context.isImpersonating());
+            executeSensitive(server);
+            assertEquals(1, server.getNumTrackedFunctions());
+        }
+    }
+
+    @Test
+    public void testUnauthenticatedImpersonationWithImpersonationAuthorizerDenied() throws Exception {
+        try (DRPC server = new DRPC(new StormMetricsRegistry(), impersonationConf(true, true))) {
+            setUnauthenticatedImpersonation("alice");
+            try {
+                executeSensitive(server);
+                fail("Expected an AuthorizationException");
+            } catch (AuthorizationException e) {
+                assertTrue(e.get_msg().contains("without an authenticated user"), e.get_msg());
+            }
+            assertEquals(0, server.getNumTrackedFunctions());
+        }
     }
 
     public interface ThrowStuff {

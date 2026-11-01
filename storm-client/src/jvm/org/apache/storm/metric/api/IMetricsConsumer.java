@@ -13,13 +13,15 @@
 package org.apache.storm.metric.api;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.storm.task.IErrorReporter;
 import org.apache.storm.task.TopologyContext;
 
 public interface IMetricsConsumer {
-    void prepare(Map<String, Object> topoConf, Object registrationArgument, TopologyContext context, IErrorReporter errorReporter);
+    void prepare(Map<String, Object> topoConf, Object registrationArgument, TopologyContext context,
+            IErrorReporter errorReporter);
 
     void handleDataPoints(TaskInfo taskInfo, Collection<DataPoint> dataPoints);
 
@@ -36,7 +38,8 @@ public interface IMetricsConsumer {
         public TaskInfo() {
         }
 
-        public TaskInfo(String srcWorkerHost, int srcWorkerPort, String srcComponentId, int srcTaskId, long timestamp,
+        public TaskInfo(String srcWorkerHost, int srcWorkerPort, String srcComponentId,
+                int srcTaskId, long timestamp,
                         int updateIntervalSecs) {
             this.srcWorkerHost = srcWorkerHost;
             this.srcWorkerPort = srcWorkerPort;
@@ -59,18 +62,34 @@ public interface IMetricsConsumer {
     class DataPoint {
         public String name;
         public Object value;
+        public Map<String, String> dimensions;
 
         public DataPoint() {
         }
 
         public DataPoint(String name, Object value) {
+            this(name, value, Collections.emptyMap());
+        }
+
+        public DataPoint(String name, Object value, Map<String, String> dimensions) {
             this.name = name;
             this.value = value;
+            this.dimensions = dimensions;
         }
 
         @Override
         public String toString() {
-            return "[" + name + " = " + value + "]";
+            StringBuilder sb = new StringBuilder();
+            sb.append("[");
+            sb.append(name);
+            sb.append("=");
+            sb.append(value);
+            if (!dimensions.isEmpty()) {
+                sb.append(", ");
+                sb.append(dimensions.toString());
+            }
+            sb.append("]");
+            return sb.toString();
         }
 
         @Override
@@ -84,13 +103,16 @@ public interface IMetricsConsumer {
 
             DataPoint dataPoint = (DataPoint) o;
 
-            return Objects.equals(name, dataPoint.name) && Objects.deepEquals(value, dataPoint.value);
+            return Objects.equals(name, dataPoint.name)
+                    && Objects.deepEquals(value, dataPoint.value)
+                    && Objects.deepEquals(dimensions, dataPoint.dimensions);
         }
 
         @Override
         public int hashCode() {
             int result = name != null ? name.hashCode() : 0;
             result = 31 * result + (value != null ? value.hashCode() : 0);
+            result = 31 * result + (dimensions != null ? dimensions.hashCode() : 0);
             return result;
         }
     }

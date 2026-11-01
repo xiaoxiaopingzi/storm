@@ -19,7 +19,7 @@ package org.apache.storm.st.wrapper;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.Collections2;
-import org.apache.commons.lang.exception.ExceptionUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.storm.generated.ClusterSummary;
 import org.apache.storm.generated.KillOptions;
 import org.apache.storm.generated.Nimbus;
@@ -47,7 +47,7 @@ public class StormCluster {
 
     public StormCluster() {
         Map<String, Object> conf = getConfig();
-        this.client = NimbusClient.getConfiguredClient(conf).getClient();
+        this.client = NimbusClient.Builder.withConf(conf).build().getClient();
     }
 
     public static Map<String, Object> getConfig() {
@@ -95,7 +95,7 @@ public class StormCluster {
                 log.info("Topology killed: " + topologyName);
                 return;
             } catch (TException e) {
-                log.warn("Couldn't kill topology: " + topologyName + ", going to retry soon. Exception: " + ExceptionUtils.getFullStackTrace(e));
+                log.warn("Couldn't kill topology: " + topologyName + ", going to retry soon. Exception: " + ExceptionUtils.getStackTrace(e));
                 Thread.sleep(TimeUnit.SECONDS.toMillis(2));
             }
         }

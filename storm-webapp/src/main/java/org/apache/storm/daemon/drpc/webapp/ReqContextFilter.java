@@ -18,18 +18,19 @@
 
 package org.apache.storm.daemon.drpc.webapp;
 
-import java.io.IOException;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.container.PreMatching;
+import jakarta.ws.rs.ext.Provider;
 
-import javax.servlet.Filter;
-import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.ws.rs.container.PreMatching;
-import javax.ws.rs.ext.Provider;
+import java.io.IOException;
+import java.net.InetAddress;
 
 import org.apache.storm.security.auth.IHttpCredentialsPlugin;
 import org.apache.storm.security.auth.ReqContext;
@@ -48,8 +49,23 @@ public class ReqContextFilter implements Filter {
      * @param request the request to populate
      */
     public void populateContext(HttpServletRequest request) {
+        ReqContext context = ReqContext.context();
         if (httpCredsHandler != null) {
-            httpCredsHandler.populateContext(ReqContext.context(), request);
+            httpCredsHandler.populateContext(context, request);
+        }
+        context.setRemoteAddress(getRemoteAddress(request));
+    }
+
+    private static InetAddress getRemoteAddress(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        if (remoteAddr == null || remoteAddr.isEmpty()) {
+            return null;
+        }
+        try {
+            // The servlet container reports an IP address literal; ofLiteral never does a name lookup.
+            return InetAddress.ofLiteral(remoteAddr);
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 

@@ -20,26 +20,17 @@ package org.apache.storm.daemon.logviewer.utils;
 
 import static j2html.TagCreator.body;
 import static j2html.TagCreator.h2;
-import static javax.ws.rs.core.Response.Status.FORBIDDEN;
-import static javax.ws.rs.core.Response.Status.OK;
-import static org.apache.commons.lang.StringEscapeUtils.escapeHtml;
+import static org.apache.commons.text.StringEscapeUtils.escapeHtml4;
 
-import com.codahale.metrics.Meter;
 import com.google.common.io.ByteStreams;
 
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
+
 import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Files;
-import java.util.HashMap;
-import java.util.Map;
-
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.StreamingOutput;
 
 import org.apache.storm.daemon.common.JsonResponseBuilder;
 import org.apache.storm.daemon.ui.UIHelpers;
@@ -55,7 +46,7 @@ public class LogviewerResponseBuilder {
      * @param content HTML entity content, String type
      */
     public static Response buildSuccessHtmlResponse(String content) {
-        return Response.status(OK).entity(content)
+        return Response.status(jakarta.ws.rs.core.Response.Status.OK).entity(content)
                 .type(MediaType.TEXT_HTML_TYPE).build();
     }
 
@@ -64,34 +55,27 @@ public class LogviewerResponseBuilder {
      *
      * @param entity entity object to represent it as JSON
      * @param callback callbackParameterName for JSONP
-     * @param origin origin
-     * @see {@link JsonResponseBuilder}
+     * @param origin origin of the request, not echoed back in the response
      */
     public static Response buildSuccessJsonResponse(Object entity, String callback, String origin) {
-        return new JsonResponseBuilder().setData(entity).setCallback(callback)
-                .setHeaders(LogviewerResponseBuilder.getHeadersForSuccessResponse(origin)).build();
+        // The request origin is deliberately not reflected back: pairing a caller supplied
+        // Access-Control-Allow-Origin with Access-Control-Allow-Credentials would let browsers
+        // hand the response to any site. Keep the default Access-Control-Allow-Origin: * instead.
+        return new JsonResponseBuilder().setData(entity).setCallback(callback).build();
     }
 
     /**
-     * Build a Response object representing download a file.
+     * Build a Response object representing download of an already opened file.
      *
      * @param contentDispositionName The name to set in the Content-Disposition header
-     * @param file file to download
+     * @param is the opened file; it is read and then closed when the response is written
      */
-    public static Response buildDownloadFile(String contentDispositionName,
-        File file, Meter numFileDownloadExceptions) throws IOException {
-        try {
-            // do not close this InputStream in method: it will be used from jetty server
-            InputStream is = Files.newInputStream(file.toPath());
-            return Response.status(OK)
-                    .entity(wrapWithStreamingOutput(is))
-                    .type(MediaType.APPLICATION_OCTET_STREAM_TYPE)
-                    .header("Content-Disposition", "attachment; filename=\"" + contentDispositionName + "\"")
-                    .build();
-        } catch (IOException e) {
-            numFileDownloadExceptions.mark();
-            throw e;
-        }
+    public static Response buildDownloadFile(String contentDispositionName, InputStream is) {
+        return Response.status(jakarta.ws.rs.core.Response.Status.OK)
+                .entity(wrapWithStreamingOutput(is))
+                .type(MediaType.APPLICATION_OCTET_STREAM_TYPE)
+                .header("Content-Disposition", "attachment; filename=\"" + contentDispositionName + "\"")
+                .build();
     }
 
     /**
@@ -101,7 +85,7 @@ public class LogviewerResponseBuilder {
      */
     public static Response buildResponseUnauthorizedUser(String user) {
         String entity = buildUnauthorizedUserHtml(user);
-        return Response.status(FORBIDDEN)
+        return Response.status(jakarta.ws.rs.core.Response.Status.FORBIDDEN)
                 .entity(entity)
                 .type(MediaType.TEXT_HTML_TYPE)
                 .build();
@@ -140,28 +124,24 @@ public class LogviewerResponseBuilder {
                 .setCallback(callback).setStatus(statusCode).build();
     }
 
-    private static Map<String, Object> getHeadersForSuccessResponse(String origin) {
-        Map<String, Object> headers = new HashMap<>();
-        headers.put("Access-Control-Allow-Origin", origin);
-        headers.put("Access-Control-Allow-Credentials", "true");
-        return headers;
-    }
-
     private static String buildUnauthorizedUserHtml(String user) {
-        String content = "User '" + escapeHtml(user) + "' is not authorized.";
+        String content = "User '" + escapeHtml4(user) + "' is not authorized.";
         return body(h2(content)).render();
     }
 
     private static StreamingOutput wrapWithStreamingOutput(final InputStream inputStream) {
+        //The input is closed once it has been written (or the write failed), Jersey does not close it for a StreamingOutput
         return os -> {
-            OutputStream wrappedOutputStream = os;
-            if (!(os instanceof BufferedOutputStream)) {
-                wrappedOutputStream = new BufferedOutputStream(os);
+            try (InputStream is = inputStream) {
+                OutputStream wrappedOutputStream = os;
+                if (!(os instanceof BufferedOutputStream)) {
+                    wrappedOutputStream = new BufferedOutputStream(os);
+                }
+
+                ByteStreams.copy(is, wrappedOutputStream);
+
+                wrappedOutputStream.flush();
             }
-
-            ByteStreams.copy(inputStream, wrappedOutputStream);
-
-            wrappedOutputStream.flush();
         };
     }
 

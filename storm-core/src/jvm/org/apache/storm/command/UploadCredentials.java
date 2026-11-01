@@ -19,14 +19,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import net.minidev.json.JSONValue;
 import org.apache.storm.Config;
 import org.apache.storm.StormSubmitter;
-import org.apache.storm.generated.ClusterSummary;
 import org.apache.storm.generated.Nimbus;
 import org.apache.storm.generated.TopologySummary;
+import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.NimbusClient;
 import org.apache.storm.utils.Utils;
-import org.json.simple.JSONValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,7 +72,7 @@ public class UploadCredentials {
 
         Map<String, Object> topologyConf = new HashMap<>();
         //Try to get the topology conf from nimbus, so we can reuse it.
-        try (NimbusClient nc = NimbusClient.getConfiguredClient(new HashMap<>())) {
+        try (NimbusClient nc = NimbusClient.Builder.withConf(new HashMap<>()).build()) {
             Nimbus.Iface client = nc.getClient();
             TopologySummary topo = client.getTopologySummaryByName(topologyName);
             //We found the topology, lets get the conf
@@ -105,8 +105,18 @@ public class UploadCredentials {
             }
         }
 
-        // use the local setting for the login config rather than the topology's
+        /*
+          When a topology is submitted, some of its configs might be changed by nimbus for various reasons.
+          This topologyConf here comes from the topology after it is submitted to the cluster, so it might not be the same as
+          the configs set up on the CLI. For some configs, we want to use whatever is set up on the client side.
+          This includes java.security.auth.login.config and NIMBUS_THRIFT_CLIENT_USE_TLS.
+          We should look into finding a better solution for this.
+         */
         topologyConf.remove("java.security.auth.login.config");
+        topologyConf.remove(Config.NIMBUS_THRIFT_CLIENT_USE_TLS);
+        // Nimbus masks credentials before serving a conf, so these entries hold no usable value here.
+        // Dropping them lets the client's own configuration supply them, e.g. TLS store passwords.
+        topologyConf.keySet().removeIf(ConfigUtils::isCredentialKey);
 
         boolean throwExceptionForEmptyCreds = (boolean) cl.get("e");
         boolean hasCreds = StormSubmitter.pushCredentials(topologyName, topologyConf, credentialsMap, (String) cl.get("u"));

@@ -1,9 +1,12 @@
 # Running Apache Storm Securely
 
 Apache Storm offers a range of configuration options when trying to secure
-your cluster.  By default all authentication and authorization is disabled but
-can be turned on as needed.  Many of these features only became available in
-Storm-0.10.
+your cluster.  By default, all authentication and authorization is disabled but
+can be turned on as needed. 
+
++For the assumptions, trust boundaries, and scope of what Storm considers a security vulnerability, see the       
++ [Apache Storm Security Model](https://storm.apache.org/security-model.html). Reading it first is recommended before reporting sec       
++urity issues.
 
 ## Firewall/OS level Security
 
@@ -414,6 +417,17 @@ min.user.id=$(min_user_id)
 where `worker_launcher_group` is the same group the supervisor user is a part of, and `min.user.id` is set to the first real user id on the system.
 This config file also needs to be owned by root and *not* have world nor group write permissions.
 
+
+### Storm‐Netty Authentication
+
+The authentication for Netty connections between workers by default is disabled. 
+It can either be set for your cluster or on a per topology basis. This setting will prevent any 
+unauthorized messages from getting processed. The config for enabling the
+Storm‐Netty authentication is as follows:
+```yaml
+storm.messaging.netty.authentication: true
+```
+
 ### Impersonating a user
 A storm client may submit requests on behalf of another user. For example, if a `userX` submits an oozie workflow and as part of workflow execution if user `oozie` wants to submit a topology on behalf of `userX`
 it can do so by leveraging the impersonation feature. In order to submit a topology as some other user, you can use the `StormSubmitter.submitTopologyAs` API. Alternatively you can use `NimbusClient.getConfiguredClientAs`
@@ -436,6 +450,9 @@ nimbus.impersonation.acl:
         groups:
             [comma separated list of groups whose users impersonating_user2 is allowed to impersonate]
 ```
+
+The DRPC server applies the same `nimbus.impersonation.authorizer` and `nimbus.impersonation.acl` to requests that impersonate another user (for example through the `doAsUser` HTTP header or query parameter), so the DRPC server should be configured with the same settings (including `storm.group.mapping.service`). A request that sets `doAsUser` without an authenticated user is rejected, whether or not an impersonation authorizer is configured.
+For HTTP requests the host is the address the DRPC server sees the connection come from, so when the DRPC HTTP endpoint is behind a reverse proxy, the hosts listed in `nimbus.impersonation.acl` match the proxy rather than the original client.
 
 To support the oozie use-case, the following config can be supplied:
 ```yaml
@@ -498,5 +515,3 @@ nimbus.groups:
 
 ### DRPC
 Hopefully more on this soon
-
-

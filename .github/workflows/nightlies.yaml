@@ -1,0 +1,63 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Publish Storm to nightlies.apache.org
+
+on:
+  workflow_dispatch: { }
+  schedule:
+    # every day 5min after midnight, UTC.
+    - cron: "5 0 * * *"
+
+jobs:
+  upload_to_nightlies:
+    if: github.repository == 'apache/storm'
+    name: Upload to Nightly Builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository
+          key: nightlies-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            nightlies-maven-
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.10'
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Ensure a clean state without storm artifacts
+        run: rm -rf ~/.m2/repository/org/apache/storm
+      - name: Set up project dependencies
+        run: /bin/bash ./dev-tools/gitact/gitact-install.sh `pwd`
+      - name: Package binaries
+        run: mvn package -f storm-dist/binary/pom.xml -Dgpg.skip
+      - name: Upload to nightlies.apache.org
+        uses: burnett01/rsync-deployments@2cbb5ed94b73d111d07a40b071b1c7d3c0272435 #v9.0.2
+        with:
+          switches: -avzh --update --delete --progress --include='*.zip' --include='*.tar.gz' --exclude='*'
+          path: storm-dist/binary/final-package/target/
+          remote_path: ${{ secrets.NIGHTLIES_RSYNC_PATH }}/storm/
+          remote_host: ${{ secrets.NIGHTLIES_RSYNC_HOST }}
+          remote_port: ${{ secrets.NIGHTLIES_RSYNC_PORT }}
+          remote_user: ${{ secrets.NIGHTLIES_RSYNC_USER }}
+          remote_key: ${{ secrets.NIGHTLIES_RSYNC_KEY }}

@@ -15,6 +15,7 @@ package org.apache.storm.metric.cgroup;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.storm.container.cgroup.SubSystemType;
@@ -24,8 +25,10 @@ import org.apache.storm.container.cgroup.core.CpuacctCore.StatType;
 
 /**
  * Report CPU used in the cgroup.
+ *
+ * @deprecated please use Metrics V2 ({@link org.apache.storm.metrics2.cgroup.CGroupCpu}) instead.
  */
-@Deprecated
+@Deprecated(since = "2.3.0", forRemoval = true)
 public class CGroupCpu extends CGroupMetricsBase<Map<String, Long>> {
     long previousSystem = 0;
     long previousUser = 0;
@@ -40,7 +43,8 @@ public class CGroupCpu extends CGroupMetricsBase<Map<String, Long>> {
         if (userHz < 0) {
             ProcessBuilder pb = new ProcessBuilder("getconf", "CLK_TCK");
             Process p = pb.start();
-            BufferedReader in = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            BufferedReader in = new BufferedReader(new InputStreamReader(p.getInputStream(),
+                    StandardCharsets.UTF_8));
             String line = in.readLine().trim();
             userHz = Integer.valueOf(line);
         }
@@ -60,7 +64,7 @@ public class CGroupCpu extends CGroupMetricsBase<Map<String, Long>> {
         previousSystem = systemHz;
         long hz = getUserHZ();
         HashMap<String, Long> ret = new HashMap<>();
-        ret.put("user-ms", user * 1000 / hz); //Convert to millis
+        ret.put("user-ms", user * 1000 / hz); // Convert to millis
         ret.put("sys-ms", sys * 1000 / hz);
         return ret;
     }

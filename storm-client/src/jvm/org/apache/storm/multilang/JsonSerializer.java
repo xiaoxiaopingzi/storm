@@ -23,9 +23,9 @@ import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import org.apache.storm.shade.org.json.simple.JSONObject;
-import org.apache.storm.shade.org.json.simple.JSONValue;
-import org.apache.storm.shade.org.json.simple.parser.ParseException;
+import org.apache.storm.shade.net.minidev.json.JSONObject;
+import org.apache.storm.shade.net.minidev.json.JSONValue;
+import org.apache.storm.shade.net.minidev.json.parser.ParseException;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.utils.Utils;
 
@@ -34,7 +34,7 @@ import org.apache.storm.utils.Utils;
  */
 public class JsonSerializer implements ISerializer {
     public static final String DEFAULT_CHARSET = "UTF-8";
-    //ANY CHANGE TO THIS CODE MUST BE SERIALIZABLE COMPATIBLE OR THERE WILL BE PROBLEMS
+    // ANY CHANGE TO THIS CODE MUST BE SERIALIZABLE COMPATIBLE OR THERE WILL BE PROBLEMS
     private static final long serialVersionUID = 2548814660410474022L;
     private transient BufferedWriter processIn;
     private transient BufferedReader processOut;
@@ -43,7 +43,8 @@ public class JsonSerializer implements ISerializer {
     public void initialize(OutputStream processIn, InputStream processOut) {
         try {
             this.processIn = new BufferedWriter(new OutputStreamWriter(processIn, DEFAULT_CHARSET));
-            this.processOut = new BufferedReader(new InputStreamReader(processOut, DEFAULT_CHARSET));
+            this.processOut = new BufferedReader(new InputStreamReader(processOut,
+                    DEFAULT_CHARSET));
         } catch (UnsupportedEncodingException e) {
             throw new RuntimeException(e);
         }
@@ -51,7 +52,7 @@ public class JsonSerializer implements ISerializer {
 
     @Override
     public Number connect(Map<String, Object> conf, TopologyContext context)
-        throws IOException, NoOutputException {
+            throws IOException, NoOutputException {
         JSONObject setupInfo = new JSONObject();
         setupInfo.put("pidDir", context.getPIDDir());
         setupInfo.put("conf", conf);
@@ -154,9 +155,9 @@ public class JsonSerializer implements ISerializer {
 
         if (command.equals("log")) {
             Object logLevelObj = msg.get("level");
-            if (logLevelObj != null && logLevelObj instanceof Long) {
-                long logLevel = (Long) logLevelObj;
-                shellMsg.setLogLevel((int) logLevel);
+            if (logLevelObj != null && logLevelObj instanceof Number) {
+                int logLevel = ((Number) logLevelObj).intValue();
+                shellMsg.setLogLevel(logLevel);
             }
         }
 
@@ -183,7 +184,7 @@ public class JsonSerializer implements ISerializer {
                     errorMessage.append(" No output read.\n");
                 } else {
                     errorMessage.append(" Currently read output: "
-                                        + line.toString() + "\n");
+                            + line.toString() + "\n");
                 }
                 errorMessage.append("Serializer Exception:\n");
                 throw new NoOutputException(errorMessage.toString());

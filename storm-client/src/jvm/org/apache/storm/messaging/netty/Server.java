@@ -26,11 +26,11 @@ import java.util.function.Supplier;
 import org.apache.storm.Config;
 import org.apache.storm.grouping.Load;
 import org.apache.storm.messaging.ConnectionWithStatus;
+import org.apache.storm.messaging.DeserializingConnectionCallback;
 import org.apache.storm.messaging.IConnectionCallback;
 import org.apache.storm.messaging.TaskMessage;
 import org.apache.storm.metric.api.IMetric;
 import org.apache.storm.metric.api.IStatefulObject;
-import org.apache.storm.serialization.KryoValuesDeserializer;
 import org.apache.storm.serialization.KryoValuesSerializer;
 import org.apache.storm.shade.io.netty.bootstrap.ServerBootstrap;
 import org.apache.storm.shade.io.netty.buffer.PooledByteBufAllocator;
@@ -42,6 +42,7 @@ import org.apache.storm.shade.io.netty.channel.group.ChannelGroup;
 import org.apache.storm.shade.io.netty.channel.group.DefaultChannelGroup;
 import org.apache.storm.shade.io.netty.channel.nio.NioEventLoopGroup;
 import org.apache.storm.shade.io.netty.channel.socket.nio.NioServerSocketChannel;
+import org.apache.storm.shade.io.netty.handler.ssl.SslContext;
 import org.apache.storm.shade.io.netty.util.concurrent.GlobalEventExecutor;
 import org.apache.storm.utils.ObjectReader;
 import org.slf4j.Logger;
@@ -50,17 +51,19 @@ import org.slf4j.LoggerFactory;
 class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServer {
 
     public static final int LOAD_METRICS_TASK_ID = -1;
-    
+
     private static final Logger LOG = LoggerFactory.getLogger(Server.class);
     private final EventLoopGroup bossEventLoopGroup;
     private final EventLoopGroup workerEventLoopGroup;
     private final ServerBootstrap bootstrap;
-    private final ConcurrentHashMap<String, AtomicInteger> messagesEnqueued = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AtomicInteger> messagesEnqueued =
+            new ConcurrentHashMap<>();
     private final AtomicInteger messagesDequeued = new AtomicInteger(0);
     private final int boundPort;
     private final Map<String, Object> topoConf;
     private final int port;
-    private final ChannelGroup allChannels = new DefaultChannelGroup("storm-server", GlobalEventExecutor.INSTANCE);
+    private final ChannelGroup allChannels = new DefaultChannelGroup("storm-server",
+            GlobalEventExecutor.INSTANCE);
     private final KryoValuesSerializer ser;
     private final IConnectionCallback cb;
     private final Supplier<Object> newConnectionResponse;
@@ -69,23 +72,29 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
 
     /**
      * Starts Netty at the given port.
+     *
      * @param topoConf The topology config
      * @param port The port to start Netty at
      * @param cb The callback to deliver incoming messages to
-     * @param newConnectionResponse The response to send to clients when they connect. Can be null. If authentication
+     * @param newConnectionResponse The response to send to clients when they connect. Can be null.
+     *     If authentication
      *                              is required, the message will be sent after authentication is complete.
      */
-    Server(Map<String, Object> topoConf, int port, IConnectionCallback cb, Supplier<Object> newConnectionResponse) {
+    Server(Map<String, Object> topoConf, int port, IConnectionCallback cb,
+            Supplier<Object> newConnectionResponse) {
         this.topoConf = topoConf;
-        this.isNettyAuthRequired = (Boolean) topoConf.get(Config.STORM_MESSAGING_NETTY_AUTHENTICATION);
+        this.isNettyAuthRequired = (Boolean) topoConf
+                .get(Config.STORM_MESSAGING_NETTY_AUTHENTICATION);
         this.port = port;
         ser = new KryoValuesSerializer(topoConf);
         this.cb = cb;
         this.newConnectionResponse = newConnectionResponse;
 
         // Configure the server.
-        int bufferSize = ObjectReader.getInt(topoConf.get(Config.STORM_MESSAGING_NETTY_BUFFER_SIZE));
-        int maxWorkers = ObjectReader.getInt(topoConf.get(Config.STORM_MESSAGING_NETTY_SERVER_WORKER_THREADS));
+        int bufferSize = ObjectReader.getInt(topoConf
+                .get(Config.STORM_MESSAGING_NETTY_BUFFER_SIZE));
+        int maxWorkers = ObjectReader.getInt(topoConf
+                .get(Config.STORM_MESSAGING_NETTY_SERVER_WORKER_THREADS));
 
         ThreadFactory bossFactory = new NettyRenameThreadFactory(netty_name() + "-boss");
         ThreadFactory workerFactory = new NettyRenameThreadFactory(netty_name() + "-worker");
@@ -93,21 +102,26 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
         bossEventLoopGroup = new NioEventLoopGroup(1, bossFactory);
         // 0 means DEFAULT_EVENT_LOOP_THREADS
         // https://github.com/netty/netty/blob/netty-4.1.24.Final/transport/src/main/java/io/netty/channel/MultithreadEventLoopGroup.java#L40
-        this.workerEventLoopGroup = new NioEventLoopGroup(maxWorkers > 0 ? maxWorkers : 0, workerFactory);
+        this.workerEventLoopGroup = new NioEventLoopGroup(maxWorkers > 0 ? maxWorkers : 0,
+                workerFactory);
 
-        LOG.info("Create Netty Server " + netty_name() + ", buffer_size: " + bufferSize + ", maxWorkers: " + maxWorkers);
+        LOG.info("Create Netty Server " + netty_name() + ", buffer_size: " + bufferSize
+                + ", maxWorkers: " + maxWorkers);
 
-        int backlog = ObjectReader.getInt(topoConf.get(Config.STORM_MESSAGING_NETTY_SOCKET_BACKLOG), 500);
+        SslContext sslContext = NettyTlsUtils.createSslContext(topoConf, true);
+
+        int backlog = ObjectReader.getInt(topoConf.get(Config.STORM_MESSAGING_NETTY_SOCKET_BACKLOG),
+                500);
         bootstrap = new ServerBootstrap()
-            .group(bossEventLoopGroup, workerEventLoopGroup)
-            .channel(NioServerSocketChannel.class)
-            .option(ChannelOption.SO_REUSEADDR, true)
-            .option(ChannelOption.SO_BACKLOG, backlog)
-            .childOption(ChannelOption.TCP_NODELAY, true)
-            .childOption(ChannelOption.SO_RCVBUF, bufferSize)
-            .childOption(ChannelOption.SO_KEEPALIVE, true)
-            .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-            .childHandler(new StormServerPipelineFactory(topoConf, this));
+                .group(bossEventLoopGroup, workerEventLoopGroup)
+                .channel(NioServerSocketChannel.class)
+                .option(ChannelOption.SO_REUSEADDR, true)
+                .option(ChannelOption.SO_BACKLOG, backlog)
+                .childOption(ChannelOption.TCP_NODELAY, true)
+                .childOption(ChannelOption.SO_RCVBUF, bufferSize)
+                .childOption(ChannelOption.SO_KEEPALIVE, true)
+                .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                .childHandler(new StormServerPipelineFactory(topoConf, this, sslContext));
 
         // Bind and start to accept incoming connections.
         try {
@@ -121,7 +135,7 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
     }
 
     private void addReceiveCount(String from, int amount) {
-        //This is possibly lossy in the case where a value is deleted
+        // This is possibly lossy in the case where a value is deleted
         // because it has received no messages over the metrics collection
         // period and new messages are starting to come in.  This is
         // because I don't want the overhead of a synchronize just to have
@@ -139,7 +153,7 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
     }
 
     /**
-     * enqueue a received message.
+     * Enqueue a received message.
      */
     protected void enqueue(List<TaskMessage> msgs, String from) throws InterruptedException {
         if (null == msgs || msgs.isEmpty() || closing) {
@@ -155,10 +169,11 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
     }
 
     /**
-     * close all channels, and release resources.
+     * Close all channels, and release resources.
      */
     @Override
     public void close() {
+        closing = true;
         allChannels.close().awaitUninterruptibly();
         workerEventLoopGroup.shutdownGracefully().awaitUninterruptibly();
         bossEventLoopGroup.shutdownGracefully().awaitUninterruptibly();
@@ -168,7 +183,8 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
     public void sendLoadMetrics(Map<Integer, Double> taskToLoad) {
         MessageBatch mb = new MessageBatch(1);
         synchronized (ser) {
-            mb.add(new TaskMessage(LOAD_METRICS_TASK_ID, ser.serialize(Collections.singletonList((Object) taskToLoad))));
+            mb.add(new TaskMessage(LOAD_METRICS_TASK_ID, ser.serialize(Collections
+                    .singletonList((Object) taskToLoad))));
         }
         allChannels.writeAndFlush(mb);
     }
@@ -176,7 +192,8 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
     // this method expected to be thread safe
     @Override
     public void sendBackPressureStatus(BackPressureStatus bpStatus) {
-        LOG.info("Sending BackPressure status update to connected workers. BPStatus = {}", bpStatus);
+        LOG.info("Sending BackPressure status update to connected workers. BPStatus = {}",
+                bpStatus);
         allChannels.writeAndFlush(bpStatus);
     }
 
@@ -229,7 +246,8 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
         Iterator<Map.Entry<String, AtomicInteger>> it = messagesEnqueued.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<String, AtomicInteger> ent = it.next();
-            //Yes we can delete something that is not 0 because of races, but that is OK for metrics
+            // Yes we can delete something that is not 0 because of races, but that is OK for
+            // metrics
             AtomicInteger i = ent.getValue();
             if (i.get() == 0) {
                 it.remove();
@@ -238,6 +256,11 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
             }
         }
         ret.put("enqueued", enqueued);
+
+        if (cb instanceof DeserializingConnectionCallback) {
+            DeserializingConnectionCallback callback = (DeserializingConnectionCallback) cb;
+            ret.put("deserializationFailures", callback.getAndResetDeserializationFailures());
+        }
 
         // Report messageSizes metric, if enabled (non-null).
         if (cb instanceof IMetric) {
@@ -256,21 +279,28 @@ class Server extends ConnectionWithStatus implements IStatefulObject, ISaslServe
     @Override
     public void channelActive(Channel c) {
         if (!isNettyAuthRequired) {
-            //if authentication is not required, treat it as authenticated.
+            // if authentication is not required, treat it as authenticated.
             authenticated(c);
         }
         allChannels.add(c);
     }
 
     @Override
-    public void received(Object message, String remote, Channel channel) throws InterruptedException {
+    public void terminating() {
+        closing = true;
+    }
+
+    @Override
+    public void received(Object message, String remote,
+        Channel channel) throws InterruptedException {
         List<TaskMessage> msgs;
 
         try {
             msgs = (List<TaskMessage>) message;
         } catch (ClassCastException e) {
-            LOG.error("Worker netty server received message other than the expected class List<TaskMessage> from remote: {}. Ignored.",
-                remote, e);
+            LOG.error("Worker netty server received message other than the expected class "
+                    + "List<TaskMessage> from remote: {}. Ignored.",
+                    remote, e);
             return;
         }
 

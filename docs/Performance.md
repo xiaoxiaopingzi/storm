@@ -5,14 +5,14 @@ documentation: true
 ---
 
 Latency, throughput and resource consumption are the three key dimensions involved in performance tuning.
-In the following sections we discuss the settings that can used to tune along these dimension and understand the trade-offs.
+In the following sections, we discuss the settings that can be used to tune along these dimensions and understand the trade-offs.
 
-It is important to understand that these settings can vary depending on the topology, the type of hardware and the number of hosts used by the topology.
+It is important to understand that these settings can vary depending on the topology, the type of hardware, and the number of hosts used by the topology.
 
 ## 1. Buffer Size
 Spouts and Bolts operate asynchronously using message passing. Message queues used for this purpose are of fixed but configurable size. Buffer size
 refers to the size of these queues. Every consumer has its own receive queue. The messages wait in the queue until the consumer is ready to process them.
-The queue will typically be almost empty or almost full depending whether the consumer is operating faster or slower than the rate at which producers
+The queue will typically be almost empty or almost full depending on whether the consumer is operating faster or slower than the rate at which producers
 are generating messages for it. Storm queues always have a single consumer and potentially multiple producers. There are two buffer size settings
 of interest:
 
@@ -30,22 +30,62 @@ Very large message queues are also not desirable to deal with slow consumers. Be
 are large and often full, the messages will end up waiting longer in these queues at each step of the processing, leading to poor latency being
 reported on the Storm UI. Large queues also imply higher memory consumption especially if the queues are typically full.
 
+#### Control lane for system control tuples
+
+An executor's receive queue carries two very different kinds of traffic: the data tuples flowing between components, and low-volume time-driven
+system tuples (flush tuples, tick tuples, metrics ticks, upstream feedback) that keep the topology responsive. Because the queue is FIFO, a control
+tuple enqueued behind a full data backlog waits for the entire backlog to drain first, so data-plane saturation directly degrades control-plane
+latency.
+
+- `topology.executor.receive.control.queue.enable` (default `false`) : When enabled, each executor's receive queue gets a small dedicated *control
+lane* that is drained before the data queue on every consume pass. The time-driven system streams (`__flush`, `__tick`, `__metrics_tick`,
+`__feedback_tick`, `__feedback`) are routed to it at every ingress point (timer-generated tuples, intra-worker transfer, and inter-worker receive),
+insulating them from data-plane buffering, backpressure and overflow so that their delivery latency stays bounded even while the data plane
+saturates. Writes to the control lane are un-batched and never block: if the lane is full the tuple is dropped and counted (see the
+`receive-queue-control_dropped_messages` metric), which is safe because these signals are periodic and the next one arrives within the signal's
+period. The ack streams and the `__metrics` payload stream are volume-proportional to the data plane and stay on the data path, so acking,
+`max.spout.pending` throttling and at-least-once semantics are unaffected. Note that enabling this delivers control tuples ahead of co-enqueued data
+tuples; the whitelisted streams are wall-clock signals with no ordering contract against data, so this is safe.
+Note also that `__tick` is one of these control streams, so the drop-when-full behavior applies to user-facing tick tuples too: with the lane
+enabled a `__tick` tuple may occasionally be dropped under sustained saturation instead of blocking until delivered. Bolts that rely on tick tuples
+for windowing or expiry logic must tolerate an occasional missed tick — it is not only internal signals that can be dropped.
+
+- `topology.executor.receive.control.buffer.size` (default `1024`) : The size of the control lane. Control traffic is low-volume, so the default is
+ample; like the other queue sizes it is internally rounded up to the next power of 2. The control lane is excluded from the queue load reported to
+load-aware groupings.
+
 
 ## 2. Batch Size
 Producers can either write a batch of messages to the consumer's queue or write each message individually. This batch size can be configured.
-Inserting messages in batches to downstream queues helps reduce the number of synchronization operations required for the inserts. Consequently this helps achieve higher throughput. However,
+Inserting messages in batches to downstream queues helps reduce the number of synchronization operations required for the inserts. Consequently, this helps achieve higher throughput. However,
 sometimes it may take a little time for the buffer to fill up, before it is flushed into the downstream queue. This implies that the buffered messages
 will take longer to become visible to the downstream consumer who is waiting to process them. This can increase the average end-to-end latency for
 these messages. The latency can get very bad if the batch sizes are large and the topology is not experiencing high traffic.
 
 - `topology.producer.batch.size` : The batch size for writes into the receive queue of any spout/bolt is controlled via this setting. This setting
 impacts the communication within a worker process. Each upstream producer maintains a separate batch to a component's receive queue. So if two spout
-instances are writing to the same downstream bolt instance, each of the spout instances will have maintain a separate batch.
+instances are writing to the same downstream bolt instance, each of the spout instances will have to maintain a separate batch.
 
 -  `topology.transfer.batch.size` : Messages that are destined to a spout/bolt running on a different worker process, are sent to a queue called
 the **Worker Transfer Queue**. The Worker Transfer Thread is responsible for draining the messages in this queue and send them to the appropriate
 worker process over the network. This setting controls the batch size for writes into the Worker Transfer Queue.  This impacts the communication
 between worker processes.
+
+- `topology.producer.batch.dynamic` (default `false`) : When enabled, the receive-queue producer batch size is no longer fixed: it adapts at
+runtime between 1 and `topology.producer.batch.size` so that the topology gets low latency under light traffic and high throughput under heavy
+traffic, without having to pick a single compromise value. It has no effect unless `topology.producer.batch.size` is greater than 1. It applies to
+the producer (receive-queue) batch only; the Worker Transfer Queue batch (`topology.transfer.batch.size`) remains fixed.
+
+  The effective batch size is adjusted using an AIMD (additive-increase / multiplicative-decrease) policy driven solely by *why* a batch is
+  flushed, so it requires no extra metrics:
+
+   - a batch flushed because it filled up to the current effective size is read as heavy load, and the effective size is increased by 1 (up to the
+   configured maximum);
+   - a partially-filled batch flushed by a *flush tuple* (see [Flush Tuple Frequency](#3-flush-tuple-frequency)) is read as light load, and the
+   effective size is halved (down to a minimum of 1).
+
+  Under sustained heavy traffic the effective size climbs to `topology.producer.batch.size` and behaves like a fixed batch; under light traffic it
+  shrinks toward 1 so that each message is published immediately instead of waiting for the batch to fill or for the next flush tuple.
 
 #### Guidance
 
@@ -57,7 +97,9 @@ Beyond a certain point the throughput is likely to get worse.
 
 **Varying throughput:** Topologies often experience fluctuating amounts of incoming traffic over the day. Other topos may experience higher traffic in some
 paths and lower throughput in other paths simultaneously. If latency is not a concern, a small bach size (e.g. 10) and in conjunction with the right flush
-frequency may provide a reasonable compromise for such scenarios. For meeting stricter latency SLAs, consider setting it to 1.
+frequency may provide a reasonable compromise for such scenarios. For meeting stricter latency SLAs, consider setting it to 1. Alternatively, set
+`topology.producer.batch.size` to the throughput-optimal value and enable `topology.producer.batch.dynamic`: the batch will automatically shrink toward 1
+during quiet periods (for latency) and grow back toward the configured size during bursts (for throughput), instead of committing to one compromise value.
 
 
 ## 3. Flush Tuple Frequency
@@ -73,7 +115,7 @@ set to 0 or if (`topology.producer.batch.size`=1 and `topology.transfer.batch.si
 
 
 #### Guidance
-Flushing interval can be used as tool to retain the higher throughput benefits of batching and avoid batched messages getting stuck for too long waiting for their.
+Flushing interval can be used as a tool to retain the higher throughput benefits of batching and avoid batched messages getting stuck for too long waiting for theirs.
 batch to fill. Preferably this value should be larger than the average execute latencies of the bolts in the topology. Trying to flush the queues more frequently than
 the amount of time it takes to produce the messages may hurt performance. Understanding the average execute latencies of each bolt will help determine the average
 number of messages in the queues between two flushes.
@@ -95,13 +137,13 @@ this wait strategy is used between nextTuple() calls, allowing the spout's execu
 when the `topology.max.spout.pending` limit has been reached when ACKers are enabled. Select a strategy using `topology.spout.wait.strategy`. Configure the
 chosen wait strategy using one of the `topology.spout.wait.*` settings.
 
-4.2 **Bolt Wait:** : When a bolt polls it's receive queue for new messages to process, it is possible that the queue is empty. This typically happens
+4.2 **Bolt Wait:** : When a bolt polls it's receive a queue for new messages to process, it is possible that the queue is empty. This typically happens
 in case of low/no traffic situations or when the upstream spout/bolt is inherently slower. This wait strategy is used in such cases. It avoids high CPU usage
 due to the bolt continuously checking on a typically empty queue. Select a strategy using `topology.bolt.wait.strategy`. The chosen strategy can be further configured
 using the `topology.bolt.wait.*` settings.
 
 4.3 **Backpressure Wait** : Select a strategy using `topology.backpressure.wait.strategy`. When a spout/bolt tries to write to a downstream component's receive queue,
-there is a possibility that the queue is full. In such cases the write needs to be retried. This wait strategy is used to induce some idling in-between re-attempts for
+there is a possibility that the queue is full. In such cases, the write needs to be retried. This wait strategy is used to induce some idling in-between re-attempts for
 conserving CPU. The chosen strategy can be further configured using the `topology.backpressure.wait.*` settings.
 
 
@@ -145,6 +187,19 @@ Impact of this on performance is dependent on the topology and its deployment fo
 Consequently it is useful to assess the impact of setting `topology.disable.loadaware.messaging` to `true` or `false` for your
 specific case.
 
+### Jitter-aware messaging
+
+`org.apache.storm.grouping.JitterAwareStreamGrouping` is an opt-in grouping that favors downstream
+tasks reporting lower jitter, falling back to load-aware shuffle when jitter feedback cannot
+distinguish the candidates. It requires both `topology.stats.ewma.enable=true` and
+`topology.upstream.feedback.enable=true` (both default to `false`). Enabling feedback alone
+does not select this grouping.
+
+Enabling upstream feedback increases inter-worker connection fan-in: each worker hosting a user
+bolt establishes an outbound Netty client connection to every remote worker hosting any task of
+that bolt's immediate upstream components (spouts or bolts), regardless of stream grouping.
+Connections are shared across tasks targeting the same worker, and existing outbound connections
+are reused. Same-worker feedback does not require a network connection.
 
 ## 7. Sampling Rate
 Sampling rate is used to control how often certain metrics are computed on the Spout and Bolt executors. This is configured using `topology.stats.sample.rate`
@@ -166,8 +221,8 @@ The *system bolt* generally processes very few messages per second, and so requi
 
 
 ## 9. Garbage Collection
-Choice of GC is an important concern for topologies that are latency or throughput sensitive. It is recommended to try the both the CMS and G1 collectors. Performance characteristics
-of the collectors can change between single and multiworker modes and is dependent on hardware characteristics such as number of CPUs and memory localities. Number of GC threads can
+Choice of GC is an important concern for topologies that are latency or throughput sensitive. It is recommended to try both the CMS and G1 collectors. Performance characteristics
+of the collectors can change between single and multiworker modes and are dependent on hardware characteristics such as the number of CPUs and memory localities. Number of GC threads can
 also affect performance. Sometimes fewer GC threads can yield better performance. It is advisable to select a collector and tune it by mimicking anticipated peak data rates on hardware
 similar to what is used in production.
 

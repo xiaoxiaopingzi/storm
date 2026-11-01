@@ -12,12 +12,12 @@
 
 package org.apache.storm.serialization;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.Collections;
 import org.apache.storm.generated.GlobalStreamId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 
 public class GzipBridgeThriftSerializationDelegateTest {
     SerializationDelegate testDelegate;
@@ -25,6 +25,7 @@ public class GzipBridgeThriftSerializationDelegateTest {
     @BeforeEach
     public void setUp() throws Exception {
         testDelegate = new GzipBridgeThriftSerializationDelegate();
+        testDelegate.prepare(Collections.emptyMap());
     }
 
     @Test

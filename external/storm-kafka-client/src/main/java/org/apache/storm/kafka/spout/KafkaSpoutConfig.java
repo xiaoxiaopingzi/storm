@@ -20,8 +20,8 @@ package org.apache.storm.kafka.spout;
 
 import java.util.Set;
 import java.util.regex.Pattern;
-import org.apache.commons.lang.builder.ToStringBuilder;
-import org.apache.commons.lang.builder.ToStringStyle;
+import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -82,6 +82,7 @@ public class KafkaSpoutConfig<K, V> extends CommonKafkaSpoutConfig<K, V> {
         this.processingGuarantee = builder.processingGuarantee;
         this.tupleTrackingEnforced = builder.tupleTrackingEnforced;
         this.metricsTimeBucketSizeInSecs = builder.metricsTimeBucketSizeInSecs;
+        this.setConsumerGroupId(builder.groupId);
     }
 
     /**
@@ -122,6 +123,7 @@ public class KafkaSpoutConfig<K, V> extends CommonKafkaSpoutConfig<K, V> {
         private ProcessingGuarantee processingGuarantee = DEFAULT_PROCESSING_GUARANTEE;
         private boolean tupleTrackingEnforced = false;
         private int metricsTimeBucketSizeInSecs = DEFAULT_METRICS_TIME_BUCKET_SIZE_SECONDS;
+        private String groupId;
 
         public Builder(String bootstrapServers, String... topics) {
             super(bootstrapServers, topics);
@@ -157,6 +159,15 @@ public class KafkaSpoutConfig<K, V> extends CommonKafkaSpoutConfig<K, V> {
          */
         public Builder<K, V> setOffsetCommitPeriodMs(long offsetCommitPeriodMs) {
             this.offsetCommitPeriodMs = offsetCommitPeriodMs;
+            return this;
+        }
+
+        /**
+         * Specifies the group id.
+         * @param groupId the group id
+         */
+        public Builder<K, V> setGroupId(String groupId) {
+            this.groupId = groupId;
             return this;
         }
 
@@ -346,6 +357,12 @@ public class KafkaSpoutConfig<K, V> extends CommonKafkaSpoutConfig<K, V> {
 
     public String getConsumerGroupId() {
         return (String) getKafkaProps().get(ConsumerConfig.GROUP_ID_CONFIG);
+    }
+
+    public void setConsumerGroupId(String groupId) {
+        if (groupId != null) {
+            getKafkaProps().put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        }
     }
 
     public int getMaxUncommittedOffsets() {

@@ -24,6 +24,8 @@ import static org.apache.storm.kafka.spout.FirstPollOffsetStrategy.UNCOMMITTED_E
 import static org.apache.storm.kafka.spout.FirstPollOffsetStrategy.UNCOMMITTED_LATEST;
 
 import com.google.common.annotations.VisibleForTesting;
+
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -37,7 +39,9 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import org.apache.commons.lang.Validate;
+
+import org.apache.commons.lang3.Validate;
+import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -48,12 +52,12 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.RetriableException;
 import org.apache.storm.kafka.spout.KafkaSpoutConfig.ProcessingGuarantee;
+import org.apache.storm.kafka.spout.internal.ClientFactory;
+import org.apache.storm.kafka.spout.internal.ClientFactoryDefault;
 import org.apache.storm.kafka.spout.internal.CommitMetadataManager;
-import org.apache.storm.kafka.spout.internal.ConsumerFactory;
-import org.apache.storm.kafka.spout.internal.ConsumerFactoryDefault;
 import org.apache.storm.kafka.spout.internal.OffsetManager;
 import org.apache.storm.kafka.spout.internal.Timer;
-import org.apache.storm.kafka.spout.metrics.KafkaOffsetMetric;
+import org.apache.storm.kafka.spout.metrics2.KafkaOffsetMetricManager;
 import org.apache.storm.kafka.spout.subscription.TopicAssigner;
 import org.apache.storm.spout.SpoutOutputCollector;
 import org.apache.storm.task.TopologyContext;
@@ -75,10 +79,11 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
 
     // Kafka
     private final KafkaSpoutConfig<K, V> kafkaSpoutConfig;
-    private final ConsumerFactory<K, V> kafkaConsumerFactory;
+    private final ClientFactory<K, V> kafkaClientFactory;
     private final TopicAssigner topicAssigner;
     private transient Consumer<K, V> consumer;
 
+    private transient Admin admin;
     // Bookkeeping
     // Strategy to determine the fetch offset of the first realized by the spout upon activation
     private transient FirstPollOffsetStrategy firstPollOffsetStrategy;
@@ -102,16 +107,16 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
     private transient Timer refreshAssignmentTimer;
     private transient TopologyContext context;
     private transient CommitMetadataManager commitMetadataManager;
-    private transient KafkaOffsetMetric<K, V> kafkaOffsetMetric;
+    private transient KafkaOffsetMetricManager<K, V> kafkaOffsetMetricManager;
     private transient KafkaSpoutConsumerRebalanceListener rebalanceListener;
 
     public KafkaSpout(KafkaSpoutConfig<K, V> kafkaSpoutConfig) {
-        this(kafkaSpoutConfig, new ConsumerFactoryDefault<>(), new TopicAssigner());
+        this(kafkaSpoutConfig, new ClientFactoryDefault<>(), new TopicAssigner());
     }
 
     @VisibleForTesting
-    KafkaSpout(KafkaSpoutConfig<K, V> kafkaSpoutConfig, ConsumerFactory<K, V> kafkaConsumerFactory, TopicAssigner topicAssigner) {
-        this.kafkaConsumerFactory = kafkaConsumerFactory;
+    KafkaSpout(KafkaSpoutConfig<K, V> kafkaSpoutConfig, ClientFactory<K, V> kafkaClientFactory, TopicAssigner topicAssigner) {
+        this.kafkaClientFactory = kafkaClientFactory;
         this.topicAssigner = topicAssigner;
         this.kafkaSpoutConfig = kafkaSpoutConfig;
     }
@@ -144,20 +149,15 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
 
         rebalanceListener = new KafkaSpoutConsumerRebalanceListener();
 
-        consumer = kafkaConsumerFactory.createConsumer(kafkaSpoutConfig.getKafkaProps());
+        consumer = kafkaClientFactory.createConsumer(kafkaSpoutConfig.getKafkaProps());
+        admin = kafkaClientFactory.createAdmin(kafkaSpoutConfig.getKafkaProps());
+
 
         tupleListener.open(conf, context);
-        if (canRegisterMetrics()) {
-            registerMetric();
-        }
+        this.kafkaOffsetMetricManager
+                = new KafkaOffsetMetricManager<>(() -> Collections.unmodifiableMap(offsetManagers), () -> admin, context);
 
         LOG.info("Kafka Spout opened with the following configuration: {}", kafkaSpoutConfig);
-    }
-
-    private void registerMetric() {
-        LOG.info("Registering Spout Metrics");
-        kafkaOffsetMetric = new KafkaOffsetMetric<>(() -> Collections.unmodifiableMap(offsetManagers), () -> consumer);
-        context.registerMetric("kafkaOffset", kafkaOffsetMetric, kafkaSpoutConfig.getMetricsTimeBucketSizeInSecs());
     }
 
     private boolean canRegisterMetrics() {
@@ -184,7 +184,7 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
             previousAssignment = partitions;
 
             LOG.info("Partitions revoked. [consumer-group={}, consumer={}, topic-partitions={}]",
-                kafkaSpoutConfig.getConsumerGroupId(), consumer, partitions);
+                    kafkaSpoutConfig.getConsumerGroupId(), consumer, partitions);
 
             if (isAtLeastOnceProcessing()) {
                 commitOffsetsForAckedTuples();
@@ -194,7 +194,7 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
         @Override
         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
             LOG.info("Partitions reassignment. [task-ID={}, consumer-group={}, consumer={}, topic-partitions={}]",
-                context.getThisTaskId(), kafkaSpoutConfig.getConsumerGroupId(), consumer, partitions);
+                    context.getThisTaskId(), kafkaSpoutConfig.getConsumerGroupId(), consumer, partitions);
 
             initialize(partitions);
             tupleListener.onPartitionsReassigned(partitions);
@@ -219,10 +219,10 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
             // leave the acked offsets and consumer position as they were to resume where it left off
             newPartitions.removeAll(previousAssignment);
             for (TopicPartition newTp : newPartitions) {
-                final OffsetAndMetadata committedOffset = consumer.committed(newTp);
-                final long fetchOffset = doSeek(newTp, committedOffset);
+                final Map<TopicPartition, OffsetAndMetadata> committedOffset = consumer.committed(Collections.singleton(newTp));
+                final long fetchOffset = doSeek(newTp, committedOffset.get(newTp));
                 LOG.debug("Set consumer position to [{}] for topic-partition [{}] with [{}] and committed offset [{}]",
-                    fetchOffset, newTp, firstPollOffsetStrategy, committedOffset);
+                        fetchOffset, newTp, firstPollOffsetStrategy, committedOffset);
                 if (isAtLeastOnceProcessing() && !offsetManagers.containsKey(newTp)) {
                     offsetManagers.put(newTp, new OffsetManager(newTp, fetchOffset));
                 }
@@ -235,13 +235,13 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
          */
         private long doSeek(TopicPartition newTp, OffsetAndMetadata committedOffset) {
             LOG.trace("Seeking offset for topic-partition [{}] with [{}] and committed offset [{}]",
-                newTp, firstPollOffsetStrategy, committedOffset);
+                    newTp, firstPollOffsetStrategy, committedOffset);
 
             if (committedOffset != null) {
                 // offset was previously committed for this consumer group and topic-partition, either by this or another topology.
                 if (commitMetadataManager.isOffsetCommittedByThisTopology(newTp,
-                    committedOffset,
-                    Collections.unmodifiableMap(offsetManagers))) {
+                        committedOffset,
+                        Collections.unmodifiableMap(offsetManagers))) {
                     // Another KafkaSpout instance (of this topology) already committed, therefore FirstPollOffsetStrategy does not apply.
                     consumer.seek(newTp, committedOffset.offset());
                 } else {
@@ -282,7 +282,7 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
                     commitOffsetsForAckedTuples();
                 } else if (kafkaSpoutConfig.getProcessingGuarantee() == ProcessingGuarantee.NO_GUARANTEE) {
                     Map<TopicPartition, OffsetAndMetadata> offsetsToCommit =
-                        createFetchedOffsetsMetadata(consumer.assignment());
+                            createFetchedOffsetsMetadata(consumer.assignment());
                     consumer.commitAsync(offsetsToCommit, null);
                     LOG.debug("Committed offsets {} to Kafka", offsetsToCommit);
                 }
@@ -337,7 +337,7 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
                     pollablePartitions.add(tp);
                 } else {
                     LOG.debug("Not polling on partition [{}]. It has [{}] uncommitted offsets, which exceeds the limit of [{}]. ", tp,
-                        numUncommittedOffsets, maxUncommittedOffsets);
+                            numUncommittedOffsets, maxUncommittedOffsets);
                 }
             }
         }
@@ -346,7 +346,7 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
 
     private boolean isWaitingToEmit() {
         return waitingToEmit.values().stream()
-            .anyMatch(list -> !list.isEmpty());
+                .anyMatch(list -> !list.isEmpty());
     }
 
     private void setWaitingToEmit(ConsumerRecords<K, V> consumerRecords) {
@@ -362,15 +362,15 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
         pausedPartitions.removeIf(pollablePartitionsInfo.pollablePartitions::contains);
         try {
             consumer.pause(pausedPartitions);
-            final ConsumerRecords<K, V> consumerRecords = consumer.poll(kafkaSpoutConfig.getPollTimeoutMs());
+            final ConsumerRecords<K, V> consumerRecords = consumer.poll(Duration.ofMillis(kafkaSpoutConfig.getPollTimeoutMs()));
             ackRetriableOffsetsIfCompactedAway(pollablePartitionsInfo.pollableEarliestRetriableOffsets, consumerRecords);
             final int numPolledRecords = consumerRecords.count();
             LOG.debug("Polled [{}] records from Kafka",
-                numPolledRecords);
+                    numPolledRecords);
             if (kafkaSpoutConfig.getProcessingGuarantee() == KafkaSpoutConfig.ProcessingGuarantee.AT_MOST_ONCE) {
                 //Commit polled records immediately to ensure delivery is at-most-once.
                 Map<TopicPartition, OffsetAndMetadata> offsetsToCommit =
-                    createFetchedOffsetsMetadata(consumer.assignment());
+                        createFetchedOffsetsMetadata(consumer.assignment());
                 consumer.commitSync(offsetsToCommit);
                 LOG.debug("Committed offsets {} to Kafka", offsetsToCommit);
             }
@@ -388,7 +388,7 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
     }
 
     private void ackRetriableOffsetsIfCompactedAway(Map<TopicPartition, Long> earliestRetriableOffsets,
-        ConsumerRecords<K, V> consumerRecords) {
+                                                    ConsumerRecords<K, V> consumerRecords) {
         for (Entry<TopicPartition, Long> entry : earliestRetriableOffsets.entrySet()) {
             TopicPartition tp = entry.getKey();
             List<ConsumerRecord<K, V>> records = consumerRecords.records(tp);
@@ -530,18 +530,18 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
                      * to the committed offset.
                      */
                     LOG.debug("Consumer fell behind committed offset. Catching up. Position was [{}], skipping to [{}]",
-                        position, committedOffset);
+                            position, committedOffset);
                     consumer.seek(tp, committedOffset);
                 }
-                /**
+                /*
                  * In some cases the waitingToEmit list may contain tuples that have just been committed. Drop these.
                  */
                 List<ConsumerRecord<K, V>> waitingToEmitForTp = waitingToEmit.get(tp);
                 if (waitingToEmitForTp != null) {
                     //Discard the pending records that are already committed
                     waitingToEmit.put(tp, waitingToEmitForTp.stream()
-                        .filter(record -> record.offset() >= committedOffset)
-                        .collect(Collectors.toCollection(LinkedList::new)));
+                            .filter(record -> record.offset() >= committedOffset)
+                            .collect(Collectors.toCollection(LinkedList::new)));
                 }
 
                 final OffsetManager offsetManager = offsetManagers.get(tp);
@@ -574,11 +574,11 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
 
         if (!emitted.contains(msgId)) {
             LOG.debug("Received ack for message [{}], associated with tuple emitted for a ConsumerRecord that "
-                + "came from a topic-partition that this consumer group instance is no longer tracking "
-                + "due to rebalance/partition reassignment. No action taken.", msgId);
+                    + "came from a topic-partition that this consumer group instance is no longer tracking "
+                    + "due to rebalance/partition reassignment. No action taken.", msgId);
         } else {
             Validate.isTrue(!retryService.isScheduled(msgId), "The message id " + msgId + " is queued for retry while being acked."
-                + " This should never occur barring errors in the RetryService implementation or the spout code.");
+                    + " This should never occur barring errors in the RetryService implementation or the spout code.");
             offsetManagers.get(msgId.getTopicPartition()).addToAckMsgs(msgId);
             emitted.remove(msgId);
         }
@@ -596,16 +596,17 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
         final KafkaSpoutMessageId msgId = (KafkaSpoutMessageId) messageId;
         if (!emitted.contains(msgId)) {
             LOG.debug("Received fail for tuple this spout is no longer tracking."
-                + " Partitions may have been reassigned. Ignoring message [{}]", msgId);
+                    + " Partitions may have been reassigned. Ignoring message [{}]", msgId);
             return;
         }
         Validate.isTrue(!retryService.isScheduled(msgId), "The message id " + msgId + " is queued for retry while being failed."
-            + " This should never occur barring errors in the RetryService implementation or the spout code.");
+                + " This should never occur barring errors in the RetryService implementation or the spout code.");
 
         msgId.incrementNumFails();
 
         if (!retryService.schedule(msgId)) {
-            LOG.debug("Reached maximum number of retries. Message [{}] being marked as acked.", msgId);
+            LOG.error("The retry service will not retry message [{}]: the tuple will be acked and its offset and later "
+                    + "offsets may be committed even though the record was not processed.", msgId);
             // this tuple should be removed from emitted only inside the ack() method. This is to ensure
             // that the OffsetManager for that TopicPartition is updated and allows commit progression
             tupleListener.onMaxRetryReached(msgId);
@@ -631,8 +632,12 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
         List<TopicPartition> allPartitionsSorted = new ArrayList<>(allPartitions);
         Collections.sort(allPartitionsSorted, TopicPartitionComparator.INSTANCE);
         Set<TopicPartition> assignedPartitions = kafkaSpoutConfig.getTopicPartitioner()
-            .getPartitionsForThisTask(allPartitionsSorted, context);
-        topicAssigner.assignPartitions(consumer, assignedPartitions, rebalanceListener);
+                .getPartitionsForThisTask(allPartitionsSorted, context);
+        boolean partitionChanged = topicAssigner.assignPartitions(consumer, assignedPartitions, rebalanceListener);
+        if (partitionChanged && canRegisterMetrics()) {
+            LOG.info("Partitions assignments has changed, updating metrics.");
+            kafkaOffsetMetricManager.registerMetricsForNewTopicPartitions(assignedPartitions);
+        }
     }
 
     @Override
@@ -664,6 +669,7 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
             commitIfNecessary();
         } finally {
             //remove resources
+            admin.close();
             consumer.close();
         }
     }
@@ -679,9 +685,9 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
     @Override
     public String toString() {
         return "KafkaSpout{"
-            + "offsetManagers =" + offsetManagers
-            + ", emitted=" + emitted
-            + "}";
+                + "offsetManagers =" + offsetManagers
+                + ", emitted=" + emitted
+                + "}";
     }
 
     @Override
@@ -714,8 +720,8 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
 
     private boolean isWrapper(Class<?> type) {
         return type == Double.class || type == Float.class || type == Long.class
-            || type == Integer.class || type == Short.class || type == Character.class
-            || type == Byte.class || type == Boolean.class || type == String.class;
+                || type == Integer.class || type == Short.class || type == Character.class
+                || type == Byte.class || type == Boolean.class || type == String.class;
     }
 
     private String getTopicsString() {
@@ -731,8 +737,8 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
         PollablePartitionsInfo(Set<TopicPartition> pollablePartitions, Map<TopicPartition, Long> earliestRetriableOffsets) {
             this.pollablePartitions = pollablePartitions;
             this.pollableEarliestRetriableOffsets = earliestRetriableOffsets.entrySet().stream()
-                .filter(entry -> pollablePartitions.contains(entry.getKey()))
-                .collect(Collectors.toMap(entry -> entry.getKey(), entry -> entry.getValue()));
+                    .filter(entry -> pollablePartitions.contains(entry.getKey()))
+                    .collect(Collectors.toMap(entry -> entry.getKey(), entry -> entry.getValue()));
         }
 
         public boolean shouldPoll() {
@@ -741,7 +747,7 @@ public class KafkaSpout<K, V> extends BaseRichSpout {
     }
 
     @VisibleForTesting
-    KafkaOffsetMetric<K, V> getKafkaOffsetMetric() {
-        return kafkaOffsetMetric;
+    KafkaOffsetMetricManager<K, V> getKafkaOffsetMetricManager() {
+        return kafkaOffsetMetricManager;
     }
 }

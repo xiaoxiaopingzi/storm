@@ -17,7 +17,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -121,7 +121,7 @@ public class DockerRunCommand extends DockerCommand {
      */
     public DockerRunCommand addAllReadWriteMountLocations(List<String> paths,
                                                           boolean createSource) throws IOException {
-        for (String dir: paths) {
+        for (String dir : paths) {
             this.addReadWriteMountLocation(dir, dir, createSource);
         }
         return this;
@@ -174,7 +174,7 @@ public class DockerRunCommand extends DockerCommand {
      */
     public DockerRunCommand addAllReadOnlyMountLocations(List<String> paths,
                                                          boolean createSource) throws IOException {
-        for (String dir: paths) {
+        for (String dir : paths) {
             this.addReadOnlyMountLocation(dir, dir, createSource);
         }
         return this;

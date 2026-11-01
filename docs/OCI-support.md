@@ -46,7 +46,7 @@ Docker does not need to be installed on each node, nor is there a dependency on 
 by an admin before containers can be launched. All that is required to be present on each node is an OCI-compatible runtime like
 `runc`.
 
-##### Leverages Distributed File Sytems For Scale
+##### Leverages Distributed File Systems For Scale
 
 Image can be fetched via HDFS or other distributed file systems instead of the Docker registry. This prevents a large cluster from
 overwhelming a Docker registry when a big topology causes all of the nodes to request an image at once. This also allows large clusters
@@ -66,7 +66,7 @@ localization is also faster, as the layers no longer need to be unpacked into a 
 First you need to use the`docker-to-squash.py` script to download docker images and configs, convert layers to squashfs files and put them to a directory in HDFS, for example
 
 ```bash
-python docker-to-squash.py pull-build-push-update --hdfs-root hdfs://hostname:port/containers \
+python3 docker-to-squash.py pull-build-push-update --hdfs-root hdfs://hostname:port/containers \
                       docker.xxx.com:4443/hadoop-user-images/storm/rhel7:20201202-232133,storm/rhel7:dev_current --log DEBUG --bootstrap
 ```
 
@@ -314,6 +314,22 @@ Then you need to set up storm with the following configs:
 | `storm.oci.manifest.to.resources.plugin` | The plugin to be used to get oci resource according to the manifest.
 | `storm.oci.resources.localizer`   | The plugin to use for oci resources localization. |
 | `storm.oci.resources.local.dir` | The local directory for localized oci resources. |
+
+### Allowed OCI bind-mount sources
+
+Bind-mount sources for OCI/runc workers are restricted to a configured set of directories, set in the root-owned `worker-launcher.cfg`:
+
+| Setting | Description |
+|---------|-------------|
+| `worker.launcher.oci.allowed.mount.source.dirs` | Comma-separated list of directories from which OCI bind-mount sources may come. A mount source is permitted only if it (resolved with `realpath`) is one of these directories or a path underneath one of them. |
+
+If `worker.launcher.oci.allowed.mount.source.dirs` is not set, no bind mounts are permitted and OCI/runc workers will not start. When enabling the OCI/runc manager, set it to the directories the supervisor mounts — this includes the paths in `storm.oci.readonly.bindmounts` and `storm.oci.readwrite.bindmounts`, and the system paths the runtime needs (for example `/etc/resolv.conf`, `/etc/hostname`, `/etc/hosts`, the nscd directory, the Storm home directory, and the cgroup root).
+
+List only directories that the container (topology) user cannot write to. A source is resolved with `realpath` before it is matched, but runc resolves it again at mount time, so a directory that the topology user can write to — such as the supervisor local directory or the worker/artifacts/tmp roots — could have a symlink planted in it that points outside the allowed set. Point bind mounts at specific, non-writable paths (for example the exact files under `storm.oci.readonly.bindmounts`) rather than at a directory the topology user owns. List specific directories: the root directory `/` is not a usable entry, since a path is only accepted when it equals or sits under a listed directory as a whole component. For example, in `worker-launcher.cfg`:
+
+```
+worker.launcher.oci.allowed.mount.source.dirs=/etc/resolv.conf,/etc/hostname,/etc/hosts,/var/run/nscd,/usr/lib/storm,/sys/fs/cgroup
+```
 
 For example, 
 ```bash

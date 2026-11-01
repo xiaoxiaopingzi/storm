@@ -105,9 +105,9 @@ public class ThroughputVsLatency {
 
         @Override
         public void execute(Tuple tuple, BasicOutputCollector collector) {
-            sleep.simulateProcessAndExecTime(executorIndex, Time.nanoTime(), null , () -> {
+            sleep.simulateProcessAndExecTime(executorIndex, Time.nanoTime(), null, () -> {
                 String sentence = tuple.getString(0);
-                for (String word: sentence.split("\\s+")) {
+                for (String word : sentence.split("\\s+")) {
                     collector.emit(new Values(word, 1));
                 }
             });
@@ -251,7 +251,7 @@ public class ThroughputVsLatency {
         metricServer.serve();
         String url = metricServer.getUrl();
 
-        NimbusClient client = NimbusClient.getConfiguredClient(sysConf);
+        NimbusClient client = NimbusClient.Builder.withConf(sysConf).build();
         conf.registerMetricsConsumer(LoggingMetricsConsumer.class);
         conf.registerMetricsConsumer(HttpForwardingMetricsConsumer.class, url, 1);
         Map<String, String> workerMetrics = new HashMap<>();
@@ -261,7 +261,6 @@ public class ThroughputVsLatency {
         }
         conf.put(Config.TOPOLOGY_WORKER_METRICS, workerMetrics);
         conf.put(Config.TOPOLOGY_BUILTIN_METRICS_BUCKET_SIZE_SECS, 10);
-        conf.put(Config.TOPOLOGY_WORKER_CHILDOPTS, "-Xmx2g");
 
         TopologyBuilder builder = new TopologyBuilder();
 

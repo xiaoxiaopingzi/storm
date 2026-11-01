@@ -22,12 +22,11 @@ import com.codahale.metrics.Meter;
 import com.google.common.annotations.VisibleForTesting;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.daemon.logviewer.utils.DirectoryCleaner;
 import org.apache.storm.daemon.logviewer.utils.ExceptionMeterNames;
@@ -40,11 +39,11 @@ import org.apache.storm.metric.StormMetricsRegistry;
 import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.Utils;
+import org.eclipse.jetty.ee10.servlet.DefaultServlet;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.DefaultServlet;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
-import org.eclipse.jetty.util.resource.Resource;
+import org.eclipse.jetty.util.resource.PathResourceFactory;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,12 +94,7 @@ public class LogviewerServer implements AutoCloseable {
                     httpsTsPath, httpsTsPassword, httpsTsType, httpsNeedClientAuth, httpsWantClientAuth, enableSslReload);
 
             ServletContextHandler context = new ServletContextHandler(ServletContextHandler.NO_SESSIONS);
-            try {
-                context.setBaseResource(Resource.newResource(STATIC_RESOURCE_DIRECTORY_PATH));
-            } catch (IOException e) {
-                throw new RuntimeException("Can't locate static resource directory " + STATIC_RESOURCE_DIRECTORY_PATH);
-            }
-
+            context.setBaseResource(new PathResourceFactory().newResource(STATIC_RESOURCE_DIRECTORY_PATH));
             context.setWelcomeFiles(new String[]{"logviewer.html"});
             context.setContextPath("/");
             ret.setHandler(context);
@@ -111,7 +105,7 @@ public class LogviewerServer implements AutoCloseable {
 
             ServletHolder jerseyServlet = context.addServlet(ServletContainer.class, "/api/v1/*");
             jerseyServlet.setInitOrder(2);
-            jerseyServlet.setInitParameter("javax.ws.rs.Application", LogviewerApplication.class.getName());
+            jerseyServlet.setInitParameter("jakarta.ws.rs.Application", LogviewerApplication.class.getName());
 
             UIHelpers.configFilters(context, filterConfigurations);
         }
@@ -148,7 +142,7 @@ public class LogviewerServer implements AutoCloseable {
     @Override
     public synchronized void close() {
         if (!closed) {
-            //TODO this is causing issues...
+            //TODO: this is causing issues...
             //if (httpServer != null) {
             //    httpServer.destroy();
             //}

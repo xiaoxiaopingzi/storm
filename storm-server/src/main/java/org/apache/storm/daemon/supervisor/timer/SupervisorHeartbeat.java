@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.ListUtils;
 import org.apache.storm.Config;
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.ServerConstants;
@@ -29,6 +28,7 @@ import org.apache.storm.daemon.supervisor.SupervisorUtils;
 import org.apache.storm.generated.SupervisorInfo;
 import org.apache.storm.scheduler.resource.normalization.NormalizedResourceOffer;
 import org.apache.storm.scheduler.resource.normalization.NormalizedResources;
+import org.apache.storm.shade.org.apache.commons.collections4.ListUtils;
 import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.Time;
 import org.slf4j.Logger;
@@ -74,7 +74,7 @@ public class SupervisorHeartbeat implements Runnable {
         if (validatedNumaMap != null) {
             for (Map.Entry<String, Object> numaMapEntry : validatedNumaMap.entrySet()) {
                 SupervisorInfo supervisorInfo = new SupervisorInfo();
-                supervisorInfo.set_time_secs(Time.currentTimeSecs());
+                supervisorInfo.set_time_secs(Time.currentTimeSecsLong());
                 supervisorInfo.set_hostname(supervisor.getHostName());
                 supervisorInfo.set_assignment_id(
                         supervisor.getAssignmentId() + ServerConstants.NUMA_ID_SEPARATOR + numaMapEntry.getKey()
@@ -106,7 +106,7 @@ public class SupervisorHeartbeat implements Runnable {
         if (totalSupervisorNormalizedResources.getTotalCpu() > 0
             && totalSupervisorNormalizedResources.getTotalMemoryMb() > 0 && !allPortList.isEmpty()) {
             SupervisorInfo supervisorInfo = new SupervisorInfo();
-            supervisorInfo.set_time_secs(Time.currentTimeSecs());
+            supervisorInfo.set_time_secs(Time.currentTimeSecsLong());
             supervisorInfo.set_hostname(supervisor.getHostName());
             supervisorInfo.set_assignment_id(supervisor.getAssignmentId());
             supervisorInfo.set_server_port(supervisor.getThriftServerPort());
@@ -161,7 +161,7 @@ public class SupervisorHeartbeat implements Runnable {
     public void run() {
         Map<String, Object> validatedNumaMap = SupervisorUtils.getNumaMap(conf);
         Map<String, SupervisorInfo> supervisorInfoList = buildSupervisorInfo(conf, supervisor, validatedNumaMap);
-        for (Map.Entry<String, SupervisorInfo> supervisorInfoEntry: supervisorInfoList.entrySet()) {
+        for (Map.Entry<String, SupervisorInfo> supervisorInfoEntry : supervisorInfoList.entrySet()) {
             stormClusterState.supervisorHeartbeat(supervisorInfoEntry.getKey(), supervisorInfoEntry.getValue());
         }
     }

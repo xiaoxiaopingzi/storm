@@ -18,6 +18,8 @@
 #ifndef OCI_OCI_LAUNCH_CMD_H
 #define OCI_OCI_LAUNCH_CMD_H
 
+#include <stdbool.h>
+
 #include "utils/cJSON.h"
 
 // NOTE: Update free_oci_launch_cmd when this is changed.
@@ -65,5 +67,40 @@ void free_oci_launch_cmd(oci_launch_cmd* olc);
  * Returns a pointer to the launch command or NULL on error.
  */
 oci_launch_cmd* parse_oci_launch_cmd(const char* command_filename);
+
+/**
+ * Validate a container id: a type 4 UUID with an optional "PORTNUM-"
+ * prefix, i.e. only hex digits and dashes, 36 to 42 characters.
+ *
+ * Returns true if the id is well-formed.
+ */
+bool validate_container_id(const char* input);
+
+/**
+ * Return true if the path contains a "." or ".." component.
+ */
+bool has_relative_path_component(const char* path);
+
+/**
+ * Return true if source equals allowed or is a path underneath it. Trailing
+ * slashes on allowed are ignored, and matching is on whole path components,
+ * so "/data/storm" matches "/data/storm/x" but not "/data/storm-evil".
+ */
+bool is_mount_source_under(const char* source, const char* allowed);
+
+/**
+ * Return true if source is a normalized absolute path that is equal to or
+ * under one of the directories configured in
+ * worker.launcher.oci.allowed.mount.source.dirs. If no such directories are
+ * configured, every source is rejected.
+ */
+bool is_valid_mount_source(const char* source);
+
+/**
+ * Return true if the launch command's username is present and equals
+ * user_name. Used to check that a launch command file's username matches the
+ * user the worker-launcher was invoked for.
+ */
+bool oci_launch_cmd_matches_user(const oci_launch_cmd* olc, const char* user_name);
 
 #endif /* OCI_OCI_LAUNCH_CMD_H */

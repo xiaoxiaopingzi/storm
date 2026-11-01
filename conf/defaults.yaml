@@ -25,7 +25,7 @@ java.library.path: "/usr/local/lib:/opt/local/lib:/usr/lib:/usr/lib64"
 storm.local.dir: "storm-local"
 storm.log4j2.conf.dir: "log4j2"
 storm.zookeeper.servers:
-    - "localhost"
+  - "localhost"
 storm.zookeeper.port: 2181
 storm.zookeeper.root: "/storm"
 storm.zookeeper.session.timeout: 20000
@@ -35,12 +35,14 @@ storm.zookeeper.retry.interval: 1000
 storm.zookeeper.retry.intervalceiling.millis: 30000
 storm.zookeeper.auth.user: null
 storm.zookeeper.auth.password: null
-storm.exhibitor.port: 8080
-storm.exhibitor.poll.uripath: "/exhibitor/v1/cluster/list"
+storm.zookeeper.ssl.enable: false
+storm.zookeeper.ssl.hostnameVerification: false
 storm.cluster.mode: "distributed" # can be distributed or local
+storm.virtual.threads.enabled: false
 storm.local.mode.zmq: false
 storm.thrift.transport: "org.apache.storm.security.auth.SimpleTransportPlugin"
 storm.thrift.socket.timeout.ms: 600000
+storm.thrift.tls.socket.timeout.ms: 600000
 storm.principal.tolocal: "org.apache.storm.security.auth.DefaultPrincipalToLocal"
 storm.group.mapping.service: "org.apache.storm.security.auth.ShellBasedGroupsMapping"
 storm.group.mapping.service.params: null
@@ -51,9 +53,16 @@ storm.nimbus.retry.intervalceiling.millis: 60000
 storm.nimbus.zookeeper.acls.check: true
 storm.nimbus.zookeeper.acls.fixup: true
 
-storm.auth.simple-white-list.users: []
+storm.auth.simple-white-list.users: [ ]
 storm.cluster.state.store: "org.apache.storm.cluster.ZKStateStorageFactory"
-storm.meta.serialization.delegate: "org.apache.storm.serialization.GzipThriftSerializationDelegate"
+storm.meta.serialization.delegate: "org.apache.storm.serialization.ZstdBridgeThriftSerializationDelegate"
+topology.tuple.compression.threshold: 1460
+topology.tuple.compression.enable: false
+storm.compression.zstd.level: 3
+storm.compression.zstd.max.decompressed.bytes: 104857600
+storm.compression.gzip.max.decompressed.bytes: 104857600
+topology.tuple.compression.max.decompressed.bytes: 10485760
+topology.tuple.deserialization.strict.enable: false
 storm.codedistributor.class: "org.apache.storm.codedistributor.LocalFileSystemCodeDistributor"
 storm.workers.artifacts.dir: "workers-artifacts"
 storm.health.check.dir: "healthchecks"
@@ -61,13 +70,20 @@ storm.health.check.timeout.ms: 5000
 storm.disable.symlinks: false
 
 ### nimbus.* configs are for the master
-nimbus.seeds : ["localhost"]
+nimbus.seeds: [ "localhost" ]
 nimbus.thrift.port: 6627
 nimbus.thrift.threads: 64
 nimbus.thrift.max_buffer_size: 1048576
+nimbus.thrift.tls.port: 0
+nimbus.thrift.tls.threads: 64
+nimbus.thrift.tls.max_buffer_size: 1048576
+nimbus.thrift.client.use.tls: false
+nimbus.thrift.tls.transport: "org.apache.storm.security.auth.tls.TlsTransportPlugin"
+nimbus.thrift.tls.client.auth.required: true
+topology.worker.nimbus.thrift.client.use.tls: false
 nimbus.childopts: "-Xmx1024m"
 nimbus.task.timeout.secs: 30
-nimbus.supervisor.timeout.secs: 60
+
 nimbus.monitor.freq.secs: 10
 nimbus.cleanup.inbox.freq.secs: 600
 nimbus.inbox.jar.expiration.secs: 3600
@@ -75,11 +91,24 @@ nimbus.code.sync.freq.secs: 120
 nimbus.task.launch.secs: 120
 nimbus.file.copy.expiration.secs: 600
 nimbus.topology.validator: "org.apache.storm.nimbus.DefaultTopologyValidator"
+# The scheduler strategies that a topology is allowed to select through topology.scheduler.strategy.
+# Defaults to the strategies shipped with Storm; a custom strategy must be added to this list.
+# Removing this config or leaving it unset selects the same shipped strategies, not all of them.
+nimbus.scheduler.strategy.class.whitelist:
+  - "org.apache.storm.scheduler.resource.strategies.scheduling.DefaultResourceAwareStrategy"
+  - "org.apache.storm.scheduler.resource.strategies.scheduling.DefaultResourceAwareStrategyOld"
+  - "org.apache.storm.scheduler.resource.strategies.scheduling.GenericResourceAwareStrategy"
+  - "org.apache.storm.scheduler.resource.strategies.scheduling.GenericResourceAwareStrategyOld"
+  - "org.apache.storm.scheduler.resource.strategies.scheduling.RoundRobinResourceAwareStrategy"
+  - "org.apache.storm.scheduler.resource.strategies.scheduling.ConstraintSolverStrategy"
 topology.min.replication.count: 1
 topology.max.replication.wait.time.sec: 60
 nimbus.credential.renewers.freq.secs: 600
 nimbus.queue.size: 100000
 scheduler.display.resource: false
+nimbus.even.rebalance.idle.supervisor.enabled: false
+nimbus.even.rebalance.max.free.per.topology: 0
+nimbus.even.rebalance.idle.supervisor.min.stable.rounds: 3
 nimbus.local.assignments.backend.class: "org.apache.storm.assignments.InMemoryAssignmentBackend"
 nimbus.assignments.service.threads: 10
 nimbus.assignments.service.thread.queue.size: 100
@@ -89,6 +118,7 @@ nimbus.topology.blobstore.deletion.delay.ms: 300000
 ### ui.* configs are for the master
 ui.host: 0.0.0.0
 ui.port: 8080
+ui.title: "Storm UI"
 ui.childopts: "-Xmx768m"
 ui.actions.enabled: true
 ui.filter: null
@@ -99,6 +129,7 @@ ui.http.creds.plugin: org.apache.storm.security.auth.DefaultHttpCredentialsPlugi
 ui.pagination: 20
 ui.disable.http.binding: true
 ui.disable.spout.lag.monitoring: true
+ui.enable.jsonp: false
 
 logviewer.port: 8000
 logviewer.childopts: "-Xmx128m"
@@ -154,10 +185,10 @@ storm.blobstore.acl.validation.enabled: false
 ### supervisor.* configs are for node supervisors
 # Define the amount of workers that can be run on this machine. Each worker is assigned a port to use for communication
 supervisor.slots.ports:
-    - 6700
-    - 6701
-    - 6702
-    - 6703
+  - 6700
+  - 6701
+  - 6702
+  - 6703
 supervisor.childopts: "-Xmx256m"
 supervisor.run.worker.as.user: false
 #how long supervisor will wait to ensure that a worker process is started
@@ -175,8 +206,8 @@ supervisor.worker.heartbeats.max.timeout.secs: 600
 #For topology configurable heartbeat timeout, maximum allowed heartbeat timeout.
 worker.max.timeout.secs: 600
 supervisor.enable: true
-supervisor.supervisors: []
-supervisor.supervisors.commands: []
+supervisor.supervisors: [ ]
+supervisor.supervisors.commands: [ ]
 supervisor.memory.capacity.mb: 4096.0
 #By convention 1 cpu core should be about 100, but this can be adjusted if needed
 # using 100 makes it simple to set the desired value to the capacity measurement
@@ -223,6 +254,7 @@ task.credentials.poll.secs: 30
 storm.messaging.netty.server_worker_threads: 1
 storm.messaging.netty.client_worker_threads: 1
 storm.messaging.netty.buffer_size: 5242880 #5MB buffer
+storm.messaging.netty.flush_timeout_ms: 600000
 
 # The netty write buffer high watermark in bytes.
 # If the number of bytes queued in the netty's write buffer exceeds this value, the netty client will block
@@ -242,7 +274,12 @@ storm.messaging.netty.transfer.batch.size: 262144
 storm.messaging.netty.socket.backlog: 500
 
 # By default, the Netty SASL authentication is set to false.  Users can override and set it true for a specific topology.
+# see https://issues.apache.org/jira/browse/STORM-348 for more details
 storm.messaging.netty.authentication: false
+
+# The Netty TLS client checks that the server certificate matches the host it connects to.
+# The worker certificates must carry a host or IP SAN for the address the workers connect to.
+storm.messaging.netty.tls.hostnameVerification: true
 
 # Default plugin to use for automatic network topology discovery
 storm.network.topography.plugin: org.apache.storm.networktopography.DefaultRackDNSToSwitchMapping
@@ -267,6 +304,10 @@ topology.max.task.parallelism: null
 topology.max.spout.pending: null    # ideally should be larger than topology.producer.batch.size. (esp. if topology.batch.flush.interval.millis=0)
 topology.state.synchronization.timeout.secs: 60
 topology.stats.sample.rate: 0.05
+topology.stats.ewma.enable: false
+topology.stats.ewma.smoothing.factor: 0.0625
+topology.upstream.feedback.freq.secs: 10
+topology.upstream.feedback.enable: false
 topology.builtin.metrics.bucket.size.secs: 60
 topology.fall.back.on.java.serialization: false
 topology.worker.childopts: null
@@ -276,16 +317,16 @@ topology.worker.shared.thread.pool.size: 4
 
 # Spout Wait Strategy - employed when there is no data to produce
 topology.spout.wait.strategy: "org.apache.storm.policy.WaitStrategyProgressive"
-topology.spout.wait.park.microsec : 100          # park time for org.apache.storm.policy.WaitStrategyPark. Busy spins if set to 0.
+topology.spout.wait.park.microsec: 100          # park time for org.apache.storm.policy.WaitStrategyPark. Busy spins if set to 0.
 
 topology.spout.wait.progressive.level1.count: 0          # number of iterations to spend in level 1 [no sleep] of WaitStrategyProgressive, before progressing to level 2
 topology.spout.wait.progressive.level2.count: 0          # number of iterations to spend in level 2 [parkNanos(1)] of WaitStrategyProgressive, before progressing to level 3
 topology.spout.wait.progressive.level3.sleep.millis: 1   # sleep duration for idling iterations in level 3 of WaitStrategyProgressive
 
 # Bolt Wait Strategy - employed when there is no data in its receive buffer to process
-topology.bolt.wait.strategy : "org.apache.storm.policy.WaitStrategyProgressive"
+topology.bolt.wait.strategy: "org.apache.storm.policy.WaitStrategyProgressive"
 
-topology.bolt.wait.park.microsec : 100          # park time for org.apache.storm.policy.WaitStrategyPark. Busy spins if set to 0.
+topology.bolt.wait.park.microsec: 100          # park time for org.apache.storm.policy.WaitStrategyPark. Busy spins if set to 0.
 
 topology.bolt.wait.progressive.level1.count: 1          # number of iterations to spend in level 1 [no sleep] of WaitStrategyProgressive, before progressing to level 2
 topology.bolt.wait.progressive.level2.count: 1000       # number of iterations to spend in level 2 [parkNanos(1)] of WaitStrategyProgressive, before progressing to level 3
@@ -318,6 +359,9 @@ topology.transfer.batch.size: 1       # can be no larger than half of `topology.
 
 topology.executor.receive.buffer.size: 32768  # size of recv queue for spouts & bolts. Will be internally rounded up to next power of 2 (if not already a power of 2)
 topology.producer.batch.size: 1               # can be no larger than half of `topology.executor.receive.buffer.size`
+topology.producer.batch.dynamic: false        # when true, the producer batch size adapts between 1 and topology.producer.batch.size to reduce latency under light load. No effect unless topology.producer.batch.size > 1.
+topology.executor.receive.control.queue.enable: false  # when true, low-volume control tuples (flush/tick/metrics tick/feedback) are delivered via a dedicated control lane of the recv queue, drained before the data queue and exempt from backpressure.
+topology.executor.receive.control.buffer.size: 1024    # size of the control lane of the recv queue. Only used when topology.executor.receive.control.queue.enable is true. Will be internally rounded up to next power of 2 (if not already a power of 2)
 
 topology.batch.flush.interval.millis: 1  # Flush tuples are disabled if this is set to 0 or if (topology.producer.batch.size=1 and topology.transfer.batch.size=1).
 topology.spout.recvq.skips: 3  # Check recvQ once every N invocations of Spout's nextTuple() [when ACKs disabled]
@@ -352,7 +396,7 @@ blacklist.scheduler.assume.supervisor.bad.based.on.bad.slot: true
 
 dev.zookeeper.path: "/tmp/dev-storm-zookeeper"
 
-pacemaker.servers: []
+pacemaker.servers: [ ]
 pacemaker.port: 6699
 pacemaker.base.threads: 10
 pacemaker.max.threads: 50
@@ -360,12 +404,13 @@ pacemaker.client.max.threads: 2
 pacemaker.thread.timeout: 10
 pacemaker.childopts: "-Xmx1024m"
 pacemaker.auth.method: "NONE"
-pacemaker.kerberos.users: []
+pacemaker.kerberos.users: [ ]
 pacemaker.thrift.message.size.max: 10485760
 
 #default storm daemon metrics reporter plugins
 storm.daemon.metrics.reporter.plugins:
-     - "org.apache.storm.daemon.metrics.reporters.JmxPreparableReporter"
+  - "org.apache.storm.daemon.metrics.reporters.JmxPreparableReporter"
+storm.daemon.metrics.reporter.interval.secs: 10
 
 storm.metricstore.class: "org.apache.storm.metricstore.rocksdb.RocksDbStore"
 storm.metricprocessor.class: "org.apache.storm.metricstore.NimbusMetricProcessor"
@@ -387,8 +432,8 @@ storm.cgroup.inherit.cpuset.configs: false
 # Configs for CGroup support
 storm.cgroup.hierarchy.dir: "/cgroup/storm_resources"
 storm.cgroup.resources:
-    - "cpu"
-    - "memory"
+  - "cpu"
+  - "memory"
 storm.cgroup.hierarchy.name: "storm"
 storm.supervisor.cgroup.rootdir: "storm"
 storm.cgroup.cgexec.cmd: "/bin/cgexec"
@@ -407,12 +452,12 @@ storm.worker.min.cpu.pcore.percent: 0.0
 
 storm.topology.classpath.beginning.enabled: false
 worker.metrics:
-    "CGroupMemory": "org.apache.storm.metrics2.cgroup.CGroupMemoryUsage"
-    "CGroupMemoryLimit": "org.apache.storm.metrics2.cgroup.CGroupMemoryLimit"
-    "CGroupCpu": "org.apache.storm.metrics2.cgroup.CGroupCpu"
-    "CGroupCpuGuarantee": "org.apache.storm.metrics2.cgroup.CGroupCpuGuarantee"
-    "CGroupCpuGuaranteeByCfsQuota": "org.apache.storm.metrics2.cgroup.CGroupCpuGuaranteeByCfsQuota"
-    "CGroupCpuStat": "org.apache.storm.metrics2.cgroup.CGroupCpuStat"
+  "CGroupMemory": "org.apache.storm.metrics2.cgroup.CGroupMemoryUsage"
+  "CGroupMemoryLimit": "org.apache.storm.metrics2.cgroup.CGroupMemoryLimit"
+  "CGroupCpu": "org.apache.storm.metrics2.cgroup.CGroupCpu"
+  "CGroupCpuGuarantee": "org.apache.storm.metrics2.cgroup.CGroupCpuGuarantee"
+  "CGroupCpuGuaranteeByCfsQuota": "org.apache.storm.metrics2.cgroup.CGroupCpuGuaranteeByCfsQuota"
+  "CGroupCpuStat": "org.apache.storm.metrics2.cgroup.CGroupCpuStat"
 
 # The number of buckets for running statistics
 num.stat.buckets: 20

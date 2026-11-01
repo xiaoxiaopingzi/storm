@@ -14,22 +14,19 @@ package org.apache.storm.streams.operations;
 
 /**
  * Interface for updating state.
- *
- * @param <T> the value type
- * @param <S> the state type
  */
 public interface StateUpdater<T, S> extends Operation {
     /**
-     * A static factory to create a {@link StateUpdater} based on an initial value of the state and a state update function.
+     * A static factory to create a {@link StateUpdater} based on an initial value of the state and
+     * a state update function.
      *
      * @param initialValue  the intial value of the state
      * @param stateUpdateFn the state update function
-     * @param <T>           the value type
-     * @param <S>           the state type
      * @return the {@link StateUpdater}
      */
     static <T, S> StateUpdater<T, S> of(S initialValue,
-                                        BiFunction<? super S, ? super T, ? extends S> stateUpdateFn) {
+                                        BiFunction<? super S, ? super T,
+                                        ? extends S> stateUpdateFn) {
         return new StateUpdater<T, S>() {
             @Override
             public S init() {

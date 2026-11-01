@@ -17,16 +17,25 @@ import com.codahale.metrics.Reporter;
 import java.util.Map;
 import org.apache.storm.metrics2.MetricRegistryProvider;
 
-
 public interface StormReporter extends Reporter {
     String REPORT_PERIOD = "report.period";
     String REPORT_PERIOD_UNITS = "report.period.units";
     String REPORT_DIMENSIONS_ENABLED = "report.dimensions.enabled";
 
-    @Deprecated
-    void prepare(MetricRegistry metricsRegistry, Map<String, Object> topoConf, Map<String, Object> reporterConf);
+    /**
+     * Prepares the reporter with a metric registry.
+     *
+     * @param metricsRegistry metric registry
+     * @param topoConf topology configuration
+     * @param reporterConf reporter configuration
+     * @deprecated please use {@link #prepare(MetricRegistryProvider, Map, Map)} instead.
+     */
+    @Deprecated(since = "2.3.0", forRemoval = true)
+    void prepare(MetricRegistry metricsRegistry, Map<String, Object> topoConf, Map<String,
+        Object> reporterConf);
 
-    default void prepare(MetricRegistryProvider metricRegistryProvider, Map<String, Object> topoConf,
+    default void prepare(MetricRegistryProvider metricRegistryProvider, Map<String,
+            Object> topoConf,
                          Map<String, Object> reporterConf) {
         prepare(metricRegistryProvider.getRegistry(), topoConf, reporterConf);
     }

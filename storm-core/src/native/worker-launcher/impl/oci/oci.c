@@ -708,7 +708,7 @@ static void exec_runc(const char* container_id, const char* runc_config_path,
     }
   }
 
-  char* dir_end = strrchr(runc_config_path, '/');
+  const char* dir_end = strrchr(runc_config_path, '/');
   if (dir_end == NULL) {
     fprintf(ERRORFILE, "ERROR: Error getting bundle path from config path %s\n",
         runc_config_path);
@@ -797,10 +797,9 @@ static void exec_runc(const char* container_id, const char* runc_config_path,
   exit(ERROR_OCI_RUN_FAILED);
 }
 
-int run_oci_container(const char* command_file, const char* worker_artifacts_dir) {
+int run_oci_container(oci_launch_cmd* olc, const char* worker_artifacts_dir) {
   int rc = 0;
   char* runc_config_path = NULL;
-  oci_launch_cmd* olc = NULL;
 
   oci_launch_cmd_ctx* ctx = setup_oci_launch_cmd_ctx();
   if (ctx == NULL) {
@@ -809,9 +808,8 @@ int run_oci_container(const char* command_file, const char* worker_artifacts_dir
     goto cleanup;
   }
 
-  olc = parse_oci_launch_cmd(command_file);
   if (olc == NULL) {
-    fputs("ERROR: parse_oci_launch_cmd Failed\n", ERRORFILE);
+    fputs("ERROR: no parsed OCI launch command in run_oci_container\n", ERRORFILE);
     rc = INVALID_CONFIG_FILE;
     goto cleanup;
   }
@@ -875,7 +873,6 @@ umount_and_cleanup:
 
 cleanup:
   free(runc_config_path);
-  free_oci_launch_cmd(olc);
   free_oci_launch_cmd_ctx(ctx);
   return rc;
 }

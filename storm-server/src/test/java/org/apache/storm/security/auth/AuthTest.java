@@ -16,14 +16,13 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.security.Principal;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import javax.security.auth.Subject;
 import org.apache.storm.Config;
 import org.apache.storm.Testing;
@@ -41,11 +40,17 @@ import org.apache.storm.security.auth.digest.DigestSaslTransportPlugin;
 import org.apache.storm.security.auth.workertoken.WorkerTokenManager;
 import org.apache.storm.testing.InProcessZookeeper;
 import org.apache.storm.thrift.transport.TTransportException;
+import org.awaitility.Awaitility;
 import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.NimbusClient;
 import org.apache.storm.utils.Time;
 import org.apache.storm.utils.Utils;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,15 +148,10 @@ public class AuthTest {
             LOG.info("Starting Serving...");
             server.serve();
         }).start();
-        Testing.whileTimeout(
-            () -> !server.isServing(),
-            () -> {
-                try {
-                    Time.sleep(100);
-                } catch (InterruptedException e) {
-                    //Ignored
-                }
-            });
+        Awaitility.await("ThriftServer to start serving")
+            .atMost(Testing.TEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .pollInterval(100, TimeUnit.MILLISECONDS)
+            .until(server::isServing);
         try {
             LOG.info("Starting to run {}", body);
             body.accept(server, conf);
@@ -166,12 +166,15 @@ public class AuthTest {
                                                Class<? extends Exception> expectedException) {
         Map<String, Object> badConf = new HashMap<>(conf);
         badConf.put("java.security.auth.login.config", jaas);
-        try (NimbusClient client = new NimbusClient(badConf, "localhost", server.getPort(), NIMBUS_TIMEOUT)) {
+        try (NimbusClient client = NimbusClient.Builder.withConf(badConf).withTimeout(NIMBUS_TIMEOUT)
+                .buildWithNimbusHostPort("localhost", server.getPort())) {
             client.getClient().activate("bad_auth_test_topology");
             fail("An exception should have been thrown trying to connect.");
         } catch (Exception e) {
             LOG.info("Got Exception...", e);
-            assert (Utils.exceptionCauseIsInstanceOf(expectedException, e));
+            if (!Utils.exceptionCauseIsInstanceOf(expectedException, e)) {
+                throw new AssertionError("Expecting " + expectedException.getClass().getName() + " but got " + e.getClass().getName(), e);
+            }
         }
     }
 
@@ -185,9 +188,10 @@ public class AuthTest {
     }
 
     public static void tryConnectAs(Map<String, Object> conf, ThriftServer server, Subject subject, String topoId)
-        throws PrivilegedActionException {
-        Subject.doAs(subject, (PrivilegedExceptionAction<Void>) () -> {
-            try (NimbusClient client = new NimbusClient(conf, "localhost", server.getPort(), NIMBUS_TIMEOUT)) {
+        throws Exception {
+        SubjectCompat.doAs(subject, () -> {
+            try (NimbusClient client = NimbusClient.Builder.withConf(conf).withTimeout(NIMBUS_TIMEOUT)
+                    .buildWithNimbusHostPort("localhost", server.getPort())) {
                 client.getClient().activate(topoId); //Yes this should be a topo name, but it makes this simpler...
             }
             return null;
@@ -195,7 +199,7 @@ public class AuthTest {
     }
 
     public static Subject testConnectWithTokenFor(WorkerTokenManager wtMan, Map<String, Object> conf, ThriftServer server,
-                                                  String user, String topoId) throws PrivilegedActionException {
+                                                  String user, String topoId) throws Exception {
         WorkerToken wt = wtMan.createOrUpdateTokenFor(WorkerTokenServiceType.NIMBUS, user, topoId);
         Subject subject = createSubjectWith(wt);
         tryConnectAs(conf, server, subject, topoId);
@@ -233,7 +237,8 @@ public class AuthTest {
         withServer(SimpleTransportPlugin.class,
                    impl,
                    (ThriftServer server, Map<String, Object> conf) -> {
-                       try (NimbusClient client = new NimbusClient(conf, "localhost", server.getPort(), NIMBUS_TIMEOUT)) {
+                       try (NimbusClient client = NimbusClient.Builder.withConf(conf).withTimeout(NIMBUS_TIMEOUT)
+                               .buildWithNimbusHostPort("localhost", server.getPort())) {
                            client.getClient().activate("security_auth_test_topology");
                        }
 
@@ -242,12 +247,15 @@ public class AuthTest {
                        badConf.put(Config.STORM_THRIFT_TRANSPORT_PLUGIN, DigestSaslTransportPlugin.class.getName());
                        badConf.put("java.security.auth.login.config", DIGEST_JAAS_CONF);
                        badConf.put(Config.STORM_NIMBUS_RETRY_TIMES, 0);
-                       try (NimbusClient client = new NimbusClient(badConf, "localhost", server.getPort(), NIMBUS_TIMEOUT)) {
+                       try (NimbusClient client = NimbusClient.Builder.withConf(badConf).withTimeout(NIMBUS_TIMEOUT)
+                               .buildWithNimbusHostPort("localhost", server.getPort())) {
                            client.getClient().activate("bad_security_auth_test_topology");
                            fail("An exception should have been thrown trying to connect.");
-                       } catch (Exception te) {
-                           LOG.info("Got Exception...", te);
-                           assert (Utils.exceptionCauseIsInstanceOf(TTransportException.class, te));
+                       } catch (Exception e) {
+                           LOG.info("Got Exception...", e);
+                           if (!Utils.exceptionCauseIsInstanceOf(TTransportException.class, e)) {
+                               throw new AssertionError("Expecting TTransportException but got " + e.getClass().getName(), e);
+                           }
                        }
                    });
         verify(impl).activate("security_auth_test_topology");
@@ -267,7 +275,8 @@ public class AuthTest {
                    DigestSaslTransportPlugin.class,
                    impl,
                    (ThriftServer server, Map<String, Object> conf) -> {
-                       try (NimbusClient client = new NimbusClient(conf, "localhost", server.getPort(), NIMBUS_TIMEOUT)) {
+                       try (NimbusClient client = NimbusClient.Builder.withConf(conf).withTimeout(NIMBUS_TIMEOUT)
+                               .buildWithNimbusHostPort("localhost", server.getPort())) {
                            client.getClient().activate("security_auth_test_topology");
                        }
 
@@ -276,12 +285,15 @@ public class AuthTest {
                        //Verify simple is rejected...
                        Map<String, Object> badTransport = new HashMap<>(conf);
                        badTransport.put(Config.STORM_THRIFT_TRANSPORT_PLUGIN, SimpleTransportPlugin.class.getName());
-                       try (NimbusClient client = new NimbusClient(badTransport, "localhost", server.getPort(), NIMBUS_TIMEOUT)) {
+                       try (NimbusClient client = NimbusClient.Builder.withConf(badTransport).withTimeout(NIMBUS_TIMEOUT)
+                               .buildWithNimbusHostPort("localhost", server.getPort())) {
                            client.getClient().activate("bad_security_auth_test_topology");
                            fail("An exception should have been thrown trying to connect.");
-                       } catch (Exception te) {
-                           LOG.info("Got Exception...", te);
-                           assert (Utils.exceptionCauseIsInstanceOf(TTransportException.class, te));
+                       } catch (Exception e) {
+                           LOG.info("Got Exception...", e);
+                           if (!Utils.exceptionCauseIsInstanceOf(TTransportException.class, e)) {
+                               throw new AssertionError("Expecting TTransportException but got " + e.getClass().getName(), e);
+                           }
                        }
                        //The user here from the jaas conf is bob.  No impersonation is done, so verify that
                        ReqContext found = user.get();
@@ -323,11 +335,14 @@ public class AuthTest {
                            try (Time.SimulatedTime ignored = new Time.SimulatedTime()) {
                                conf.put(Config.STORM_NIMBUS_RETRY_TIMES, 0);
                                //We cannot connect if there is no client section in the jaas conf...
-                               try (NimbusClient client = new NimbusClient(conf, "localhost", server.getPort(), NIMBUS_TIMEOUT)) {
+                               try (NimbusClient client = NimbusClient.Builder.withConf(conf).withTimeout(NIMBUS_TIMEOUT)
+                                       .buildWithNimbusHostPort("localhost", server.getPort())) {
                                    client.getClient().activate("bad_auth_test_topology");
                                    fail("We should not be able to connect without a token...");
                                } catch (Exception e) {
-                                   assert (Utils.exceptionCauseIsInstanceOf(IOException.class, e));
+                                   if (!Utils.exceptionCauseIsInstanceOf(IOException.class, e)) {
+                                       throw new AssertionError("Expecting IOException but got " + e.getClass().getName(), e);
+                                   }
                                }
 
                                //Now let's create a token and verify that we can connect...
@@ -350,7 +365,9 @@ public class AuthTest {
                                    tryConnectAs(conf, server, bob, "bad_auth_test_topology");
                                    fail("We should not be able to connect with bad auth");
                                } catch (Exception e) {
-                                   assert (Utils.exceptionCauseIsInstanceOf(TTransportException.class, e));
+                                   if (!Utils.exceptionCauseIsInstanceOf(TTransportException.class, e)) {
+                                       throw new AssertionError("Expecting TTransportException but got " + e.getClass().getName(), e);
+                                   }
                                }
                                tryConnectAs(conf, server, alice, "topo-alice");
                                verifyUserIs(user, "alice");
@@ -390,6 +407,7 @@ public class AuthTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     public void simpleAclUserAuthTest() {
         Map<String, Object> clusterConf = ConfigUtils.readStormConfig();
         clusterConf.put(Config.NIMBUS_ADMINS, Collections.singletonList("admin"));
@@ -478,6 +496,7 @@ public class AuthTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     public void simpleAclNimbusUsersAuthTest() {
         Map<String, Object> clusterConf = ConfigUtils.readStormConfig();
         clusterConf.put(Config.NIMBUS_ADMINS, Collections.singletonList("admin"));
@@ -535,6 +554,7 @@ public class AuthTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     public void simpleAclSameUserAuthTest() {
         Map<String, Object> clusterConf = ConfigUtils.readStormConfig();
         clusterConf.put(Config.NIMBUS_ADMINS, Collections.singletonList("admin"));
@@ -564,6 +584,7 @@ public class AuthTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     public void shellBaseGroupsMappingTest() throws Exception {
         Map<String, Object> clusterConf = ConfigUtils.readStormConfig();
         ShellBasedGroupsMapping groups = new ShellBasedGroupsMapping();
@@ -584,6 +605,7 @@ public class AuthTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     public void impersonationAuthorizerTest() throws Exception {
         final String impersonatingUser = "admin";
         final String userBeingImpersonated = System.getProperty("user.name");
@@ -628,5 +650,61 @@ public class AuthTest {
 
     public interface MyBiConsumer<T, U> {
         void accept(T t, U u) throws Exception;
+    }
+
+    /**
+     * Each case runs a real ThriftServer with the given transport and extra conf, calls it through NimbusClient
+     * and asserts from inside the handler whether it ran on a virtual thread. The principal check only applies to
+     * the authenticated transport, where it proves ReqContext is still populated on a virtual handler thread.
+     */
+    static Stream<Arguments> handlerThreadCases() {
+        Map<String, Object> virtualOn = new HashMap<>();
+        virtualOn.put(Config.STORM_VIRTUAL_THREADS_ENABLED, true);
+
+        // defaults.yaml ships nimbus.queue.size, so unset it explicitly to exercise the path where
+        // THsHaServer would otherwise build its own pool (the DRPC invocations case).
+        Map<String, Object> virtualOnNoQueue = new HashMap<>(virtualOn);
+        virtualOnNoQueue.put(Config.NIMBUS_QUEUE_SIZE, null);
+
+        Map<String, Object> virtualOnSmallQueue = new HashMap<>(virtualOn);
+        virtualOnSmallQueue.put(Config.NIMBUS_QUEUE_SIZE, 8);
+
+        return Stream.of(
+            Arguments.of("simple transport, no queue size, flag on", null, SimpleTransportPlugin.class,
+                         virtualOnNoQueue, true, null),
+            Arguments.of("simple transport, queue size, flag on", null, SimpleTransportPlugin.class,
+                         virtualOnSmallQueue, true, null),
+            Arguments.of("simple transport, flag off by default", null, SimpleTransportPlugin.class,
+                         null, false, null),
+            Arguments.of("digest transport, flag on", DIGEST_JAAS_CONF, DigestSaslTransportPlugin.class,
+                         virtualOn, true, "bob"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("handlerThreadCases")
+    public void handlerRunsOnExpectedThreadType(String name, String loginCfg, Class<? extends ITransportPlugin> transport,
+                                                Map<String, Object> extra, boolean expectVirtual,
+                                                String expectedPrincipal) throws Exception {
+        Nimbus.Iface impl = mock(Nimbus.Iface.class);
+        final AtomicReference<Boolean> handlerOnVirtualThread = new AtomicReference<>();
+        final AtomicReference<ReqContext> user = new AtomicReference<>();
+        doAnswer((invocation) -> {
+            handlerOnVirtualThread.set(Thread.currentThread().isVirtual());
+            user.set(new ReqContext(ReqContext.context()));
+            return null;
+        }).when(impl).activate(anyString());
+
+        withServer(loginCfg, transport, impl, null, extra,
+            (ThriftServer server, Map<String, Object> conf) -> {
+                try (NimbusClient client = NimbusClient.Builder.withConf(conf).withTimeout(NIMBUS_TIMEOUT)
+                        .buildWithNimbusHostPort("localhost", server.getPort())) {
+                    client.getClient().activate("handler_thread_test_topology");
+                }
+                assertEquals(expectVirtual, handlerOnVirtualThread.get());
+                if (expectedPrincipal != null) {
+                    assertNotNull(user.get());
+                    assertEquals(expectedPrincipal, user.get().principal().getName());
+                }
+            });
     }
 }

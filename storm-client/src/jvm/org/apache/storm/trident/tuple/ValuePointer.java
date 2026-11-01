@@ -14,7 +14,7 @@ package org.apache.storm.trident.tuple;
 
 import java.util.HashMap;
 import java.util.Map;
-import org.apache.storm.shade.org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.storm.shade.org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.storm.tuple.Fields;
 
 public class ValuePointer {
@@ -36,7 +36,8 @@ public class ValuePointer {
         return ret;
     }
 
-    public static ValuePointer[] buildIndex(Fields fieldsOrder, Map<String, ValuePointer> pointers) {
+    public static ValuePointer[] buildIndex(Fields fieldsOrder, Map<String,
+            ValuePointer> pointers) {
         if (fieldsOrder.size() != pointers.size()) {
             throw new IllegalArgumentException("Fields order must be same length as pointers map");
         }

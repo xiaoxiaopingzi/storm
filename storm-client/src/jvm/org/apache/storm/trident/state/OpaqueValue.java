@@ -12,7 +12,7 @@
 
 package org.apache.storm.trident.state;
 
-import org.apache.storm.shade.org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.storm.shade.org.apache.commons.lang3.builder.ToStringBuilder;
 
 public class OpaqueValue<T> {
     Long currTxid;
@@ -36,7 +36,8 @@ public class OpaqueValue<T> {
         } else if (batchTxid.equals(this.currTxid)) {
             prev = this.prev;
         } else {
-            throw new RuntimeException("Current batch (" + batchTxid + ") is behind state's batch: " + this.toString());
+            throw new RuntimeException("Current batch (" + batchTxid
+                    + ") is behind state's batch: " + this.toString());
         }
         return new OpaqueValue<T>(batchTxid, newVal, prev);
     }
@@ -47,7 +48,8 @@ public class OpaqueValue<T> {
         } else if (batchTxid.equals(this.currTxid)) {
             return prev;
         } else {
-            throw new RuntimeException("Current batch (" + batchTxid + ") is behind state's batch: " + this.toString());
+            throw new RuntimeException("Current batch (" + batchTxid
+                    + ") is behind state's batch: " + this.toString());
         }
     }
 

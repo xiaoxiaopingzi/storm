@@ -15,23 +15,28 @@ package org.apache.storm.trident.spout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.trident.operation.TridentCollector;
 import org.apache.storm.trident.topology.TransactionAttempt;
 import org.apache.storm.tuple.Fields;
 
 /**
- * This defines a transactional spout which does *not* necessarily replay the same batch every time it emits a batch for a transaction id.
+ * This defines a transactional spout which does *not* necessarily replay the same batch every time
+ * it emits a batch for a transaction id.
  *
- * @param <M>          The type of metadata object passed to the Emitter when emitting a new batch based on a previous batch. This type must
+ * @param <M> The type of metadata object passed to the Emitter when emitting a new batch based on a
+ *     previous batch. This type must
  *                     be JSON serializable by json-simple.
- * @param <PartitionsT> The type of metadata object used by the coordinator to describe partitions. This type must be JSON serializable by
+ * @param <PartitionsT> The type of metadata object used by the coordinator to describe partitions.
+ *     This type must be JSON serializable by
  *                     json-simple.
  */
 public interface IOpaquePartitionedTridentSpout<PartitionsT, PartitionT extends ISpoutPartition, M>
-    extends ITridentDataSource {
+        extends ITridentDataSource {
 
-    Emitter<PartitionsT, PartitionT, M> getEmitter(Map<String, Object> conf, TopologyContext context);
+    Emitter<PartitionsT, PartitionT, M> getEmitter(Map<String, Object> conf,
+            TopologyContext context);
 
     Coordinator<PartitionsT> getCoordinator(Map<String, Object> conf, TopologyContext context);
 
@@ -40,14 +45,17 @@ public interface IOpaquePartitionedTridentSpout<PartitionsT, PartitionT extends 
     Fields getOutputFields();
 
     /**
-     * Coordinator for batches. Trident will only begin committing once at least one coordinator is ready.
+     * Coordinator for batches. Trident will only begin committing once at least one coordinator is
+     * ready.
      *
-     * @param <PartitionsT> The type of metadata object used by the coordinator to describe partitions. This type must be JSON serializable
+     * @param <PartitionsT> The type of metadata object used by the coordinator to describe
+     *     partitions. This type must be JSON serializable
      *                     by json-simple.
      */
     interface Coordinator<PartitionsT> {
         /**
-         * Indicates whether this coordinator is ready to commit the given transaction. The master batch coordinator will only begin
+         * Indicates whether this coordinator is ready to commit the given transaction. The master
+         * batch coordinator will only begin
          * committing if at least one coordinator indicates it is ready to commit.
          *
          * @param txid The transaction id
@@ -56,7 +64,8 @@ public interface IOpaquePartitionedTridentSpout<PartitionsT, PartitionT extends 
         boolean isReady(long txid);
 
         /**
-         * Gets the partitions for the following batches. The emitter will be asked to refresh partitions when this value changes.
+         * Gets the partitions for the following batches. The emitter will be asked to refresh
+         * partitions when this value changes.
          *
          * @return The partitions for the following batches.
          */
@@ -67,15 +76,18 @@ public interface IOpaquePartitionedTridentSpout<PartitionsT, PartitionT extends 
 
     interface Emitter<PartitionsT, PartitionT extends ISpoutPartition, M> {
         /**
-         * Emit a batch of tuples for a partition/transaction.
+         * Emit a batch of tuples for a list of partitions/transactions.
          *
-         * <p>Return the metadata describing this batch that will be used as lastPartitionMeta for defining the
-         * parameters of the next batch.
+         * <p>Return the map of metadata describing this batch that will be used as
+         * lastPartitionMeta for defining the
+         * parameters of the next batch for each partition.
          */
-        M emitPartitionBatch(TransactionAttempt tx, TridentCollector collector, PartitionT partition, M lastPartitionMeta);
+        Map<PartitionT, M> emitBatchNew(TransactionAttempt tx, TridentCollector collector,
+                                        Set<PartitionT> partitions, Map<PartitionT, M> lastBatchMetaMap);
 
         /**
-         * This method is called when this task is responsible for a new set of partitions. Should be used to manage things like connections
+         * This method is called when this task is responsible for a new set of partitions. Should
+         * be used to manage things like connections
          * to brokers.
          *
          * @param partitionResponsibilities The partitions assigned to this task
@@ -85,8 +97,10 @@ public interface IOpaquePartitionedTridentSpout<PartitionsT, PartitionT extends 
         /**
          * Sorts the partition info to produce an ordered list of partition.
          *
-         * @param allPartitionInfo The partition info for all partitions being processed by all spout tasks
-         * @return The ordered list of partitions being processed by all the tasks. The ordering must be consistent for all tasks.
+         * @param allPartitionInfo The partition info for all partitions being processed by all
+         *     spout tasks
+         * @return The ordered list of partitions being processed by all the tasks. The ordering
+         *     must be consistent for all tasks.
          */
         List<PartitionT> getOrderedPartitions(PartitionsT allPartitionInfo);
 
@@ -95,12 +109,15 @@ public interface IOpaquePartitionedTridentSpout<PartitionsT, PartitionT extends 
          *
          * @param taskId                 The id of this task
          * @param numTasks               The number of tasks for this spout
-         * @param allPartitionInfoSorted The partition info for all partitions being processed by all spout tasks, sorted according to
+         * @param allPartitionInfoSorted The partition info for all partitions being processed by
+         *     all spout tasks, sorted according to
          *                               {@link #getOrderedPartitions(java.lang.Object)}
          * @return The list of partitions that are to be processed by the task with id {@code taskId}
          */
-        default List<PartitionT> getPartitionsForTask(int taskId, int numTasks, List<PartitionT> allPartitionInfoSorted) {
-            final List<PartitionT> taskPartitions = new ArrayList<>(allPartitionInfoSorted == null ? 0 : allPartitionInfoSorted.size());
+        default List<PartitionT> getPartitionsForTask(int taskId, int numTasks,
+                List<PartitionT> allPartitionInfoSorted) {
+            final List<PartitionT> taskPartitions = new ArrayList<>(allPartitionInfoSorted == null
+                    ? 0 : allPartitionInfoSorted.size());
             if (allPartitionInfoSorted != null) {
                 for (int i = taskId; i < allPartitionInfoSorted.size(); i += numTasks) {
                     taskPartitions.add(allPartitionInfoSorted.get(i));

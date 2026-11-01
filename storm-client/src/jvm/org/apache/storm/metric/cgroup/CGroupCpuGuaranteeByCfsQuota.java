@@ -21,9 +21,13 @@ import org.apache.storm.container.cgroup.core.CpuCore;
 /**
  * Report the guaranteed number of ms this worker has requested.
  * It gets the result from cpu.cfs_period_us and cpu.cfs_quota_us.
- * Use this when org.apache.storm.container.docker.DockerManager is used as the storm.resource.isolation.plugin.
+ * Use this when org.apache.storm.container.docker.DockerManager is used as the
+ * storm.resource.isolation.plugin.
+ *
+ * @deprecated please use Metrics V2
+ *     ({@link org.apache.storm.metrics2.cgroup.CGroupCpuGuaranteeByCfsQuota}) instead.
  */
-@Deprecated
+@Deprecated(since = "2.3.0", forRemoval = true)
 public class CGroupCpuGuaranteeByCfsQuota extends CGroupMetricsBase<Long> {
     long previousTime = 0;
 
@@ -39,7 +43,8 @@ public class CGroupCpuGuaranteeByCfsQuota extends CGroupMetricsBase<Long> {
         if (previousTime > 0) {
             long cpuCfsQuotaUs = cpu.getCpuCfsQuotaUs();
             if (cpuCfsQuotaUs == -1) {
-                //cpu.cfs_quota_us = -1 indicates that the cgroup does not adhere to any CPU time restrictions.
+                // cpu.cfs_quota_us = -1 indicates that the cgroup does not adhere to any CPU time
+                // restrictions.
                 msGuarantee = -1L;
             } else {
                 long cpuCfsPeriodUs = cpu.getCpuCfsPeriodUs();

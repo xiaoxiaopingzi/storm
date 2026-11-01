@@ -13,6 +13,7 @@
 package org.apache.storm.metrics2.reporters;
 
 import com.codahale.metrics.ScheduledReporter;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.apache.storm.daemon.metrics.ClientMetricsUtils;
@@ -60,7 +61,8 @@ public abstract class ScheduledStormReporter implements StormReporter {
             LOG.debug("Starting...");
             reporter.start(reportingPeriod, reportingPeriodUnit);
         } else {
-            throw new IllegalStateException("Attempt to start without preparing " + getClass().getSimpleName());
+            throw new IllegalStateException("Attempt to start without preparing " + getClass()
+                    .getSimpleName());
         }
     }
 
@@ -70,7 +72,15 @@ public abstract class ScheduledStormReporter implements StormReporter {
             LOG.debug("Stopping...");
             reporter.stop();
         } else {
-            throw new IllegalStateException("Attempt to stop without preparing " + getClass().getSimpleName());
+            throw new IllegalStateException("Attempt to stop without preparing " + getClass()
+                    .getSimpleName());
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
+        if (reporter != null) {
+            reporter.close();
         }
     }
 }

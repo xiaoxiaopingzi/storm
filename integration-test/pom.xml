@@ -21,14 +21,13 @@
     <parent>
         <artifactId>storm</artifactId>
         <groupId>org.apache.storm</groupId>
-        <version>2.5.0-SNAPSHOT</version>
+        <version>3.1.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <name>Storm Integration Test</name>
     <artifactId>storm-integration-test</artifactId>
     <packaging>jar</packaging>
-
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- see comment below... This fixes an annoyance with intellij -->
@@ -56,12 +55,8 @@
         <dependency>
             <groupId>org.testng</groupId>
             <artifactId>testng</artifactId>
-            <version>7.7.0</version>
+            <version>7.12.0</version>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>joda-time</groupId>
-            <artifactId>joda-time</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.storm</groupId>
@@ -74,8 +69,8 @@
             <artifactId>guava</artifactId>
         </dependency>
         <dependency>
-          <groupId>commons-lang</groupId>
-          <artifactId>commons-lang</artifactId>
+          <groupId>org.apache.commons</groupId>
+          <artifactId>commons-lang3</artifactId>
         </dependency>
         <dependency>
           <groupId>commons-io</groupId>
@@ -84,7 +79,6 @@
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
-            <version>2.8.9</version>
         </dependency>
         <dependency>
             <groupId>com.google.code.findbugs</groupId>
@@ -107,16 +101,15 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- TestNG provider does not understand the JUnit 5 groups syntax used in the rest of the project, make sure to override it -->
+                    <!-- the TestNG tests carry no JUnit 5 tags, so drop the excluded groups inherited from the root pom -->
                     <excludedGroups>none</excludedGroups>
                     <skipTests>${skipTests}</skipTests>
                     <redirectTestOutputToFile>${redirectTestOutputToFile}</redirectTestOutputToFile>
                     <argLine>-Xmx1024m</argLine>
                     <properties>
-                        <property>
-                            <name>listener</name>
-                            <value>org.apache.storm.st.meta.TestngListener</value>
-                        </property>
+                        <configurationParameters>
+                            testng.listeners = org.apache.storm.st.meta.TestngListener
+                        </configurationParameters>
                     </properties>
                     <reuseForks>true</reuseForks>
                     <forkCount>1</forkCount>
@@ -169,6 +162,16 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.openrewrite.maven</groupId>
+                <artifactId>rewrite-maven-plugin</artifactId>
+                <!--Note - the version/config would be inherited-->
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.gmavenplus</groupId>
+                <artifactId>gmavenplus-plugin</artifactId>
+                <!--Note - the version/config would be inherited-->
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

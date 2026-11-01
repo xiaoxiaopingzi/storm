@@ -18,8 +18,9 @@
 
 package org.apache.storm.daemon.logviewer.handler;
 
+import jakarta.ws.rs.core.Response;
+
 import java.io.IOException;
-import javax.ws.rs.core.Response;
 
 import org.apache.storm.daemon.logviewer.utils.LogFileDownloader;
 import org.apache.storm.daemon.logviewer.utils.ResourceAuthorizer;
@@ -28,7 +29,6 @@ import org.apache.storm.metric.StormMetricsRegistry;
 
 public class LogviewerLogDownloadHandler {
 
-    private WorkerLogs workerLogs;
     private final LogFileDownloader logFileDownloadHelper;
 
     /**
@@ -42,21 +42,19 @@ public class LogviewerLogDownloadHandler {
      */
     public LogviewerLogDownloadHandler(String logRoot, String daemonLogRoot, WorkerLogs workerLogs,
         ResourceAuthorizer resourceAuthorizer, StormMetricsRegistry metricsRegistry) {
-        this.workerLogs = workerLogs;
-        this.logFileDownloadHelper = new LogFileDownloader(logRoot, daemonLogRoot, resourceAuthorizer, metricsRegistry);
+        this.logFileDownloadHelper = new LogFileDownloader(logRoot, daemonLogRoot, workerLogs, resourceAuthorizer, metricsRegistry);
     }
 
     /**
-     * Download an worker log.
+     * Download a worker log.
      *
      * @param host host address
      * @param fileName file to download
      * @param user username
      * @return a Response which lets browsers download that file.
-     * @see {@link LogFileDownloader#downloadFile(String, String, String, boolean)}
+     *
      */
     public Response downloadLogFile(String host, String fileName, String user) throws IOException {
-        workerLogs.setLogFilePermission(fileName);
         return logFileDownloadHelper.downloadFile(host, fileName, user, false);
     }
 
@@ -67,7 +65,6 @@ public class LogviewerLogDownloadHandler {
      * @param fileName file to download
      * @param user username
      * @return a Response which lets browsers download that file.
-     * @see {@link LogFileDownloader#downloadFile(String, String, String, boolean)}
      */
     public Response downloadDaemonLogFile(String host, String fileName, String user) throws IOException {
         return logFileDownloadHelper.downloadFile(host, fileName, user, true);

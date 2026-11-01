@@ -26,6 +26,7 @@ public class ObjectReader {
 
     /**
      * Convert the input into a list of string; ignore null members.
+     *
      * @param o the input object
      * @return a list of string
      */
@@ -128,6 +129,8 @@ public class ObjectReader {
         }
         if (o instanceof Number) {
             return ((Number) o).doubleValue();
+        } else if (o instanceof String) {
+            return Double.parseDouble((String) o);
         } else {
             throw new IllegalArgumentException("Don't know how to convert (" + o + ") to double");
         }

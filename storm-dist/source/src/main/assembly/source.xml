@@ -36,7 +36,24 @@
                 <exclude>**/*.ipr/**</exclude>
                 <exclude>**/*.iws/**</exclude>
                 <exclude>**/.lien.*/**</exclude>
+                <exclude>**/node_modules/**</exclude>
+                <exclude>**/node/**</exclude>
             </excludes>
+        </fileSet>
+        <fileSet>
+            <directory>../../external/storm-kafka-migration</directory>
+            <outputDirectory>/external/storm-kafka-migration</outputDirectory>
+            <includes>
+                <include>README.md</include>
+            </includes>
+        </fileSet>
+
+        <fileSet>
+            <directory>../../external/storm-kafka-monitor</directory>
+            <outputDirectory>/external/storm-kafka-monitor</outputDirectory>
+            <includes>
+                <include>README.md</include>
+            </includes>
         </fileSet>
     </fileSets>
 </assembly>

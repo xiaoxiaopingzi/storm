@@ -12,23 +12,57 @@
 
 package org.apache.storm.messaging;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.esotericsoftware.kryo.KryoException;
+import com.esotericsoftware.kryo.io.Output;
+import java.io.IOException;
+import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.apache.storm.Config;
 import org.apache.storm.daemon.worker.WorkerState;
+import org.apache.storm.serialization.KryoTupleDeserializer;
+import org.apache.storm.serialization.KryoTupleSerializer;
+import org.apache.storm.serialization.TupleDeserializationException;
 import org.apache.storm.task.GeneralTopologyContext;
+import org.apache.storm.testing.TestWordCounter;
+import org.apache.storm.testing.TestWordSpout;
+import org.apache.storm.topology.TopologyBuilder;
+import org.apache.storm.tuple.AddressedTuple;
+import org.apache.storm.tuple.Fields;
+import org.apache.storm.tuple.MessageId;
+import org.apache.storm.tuple.TupleImpl;
+import org.apache.storm.tuple.Values;
+import org.apache.storm.utils.Utils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 public class DeserializingConnectionCallbackTest {
     private static final byte[] messageBytes = new byte[3];
     private static TaskMessage message;
+
+    private static final String SOURCE_COMPONENT = "1";
+    private static final String DEST_COMPONENT = "2";
+    private static final int SOURCE_TASK_ID = 1;
+    private static final int DEST_TASK_ID = 2;
+    private static final byte[] JAVA_STREAM_HEADER =  {(byte) 0xAC, (byte) 0xED, 0x00, 0x05};
+
+    private GeneralTopologyContext context;
 
     @BeforeEach
     public void setUp() throws Exception {
@@ -36,16 +70,24 @@ public class DeserializingConnectionCallbackTest {
         message = mock(TaskMessage.class);
         when(message.task()).thenReturn(456); // destination taskId
         when(message.message()).thenReturn(messageBytes);
-    }
 
+        TopologyBuilder builder = new TopologyBuilder();
+        builder.setSpout(SOURCE_COMPONENT, new TestWordSpout(true), 1);
+        builder.setBolt(DEST_COMPONENT, new TestWordCounter(), 1).fieldsGrouping(SOURCE_COMPONENT,
+                new Fields("word"));
+        context = mock(GeneralTopologyContext.class);
+        when(context.getRawTopology()).thenReturn(builder.createTopology());
+        when(context.getComponentId(SOURCE_TASK_ID)).thenReturn(SOURCE_COMPONENT);
+    }
 
     @Test
     public void testUpdateMetricsConfigOff() {
         Map<String, Object> config = new HashMap<>();
         config.put(Config.TOPOLOGY_SERIALIZED_MESSAGE_SIZE_METRICS, Boolean.FALSE);
         DeserializingConnectionCallback withoutMetrics =
-            new DeserializingConnectionCallback(config, mock(GeneralTopologyContext.class), mock(
-                WorkerState.ILocalTransferCallback.class));
+                new DeserializingConnectionCallback(config, mock(GeneralTopologyContext.class),
+                mock(
+                        WorkerState.ILocalTransferCallback.class));
 
         // Metrics are off, verify null
         assertNull(withoutMetrics.getValueAndReset());
@@ -60,13 +102,14 @@ public class DeserializingConnectionCallbackTest {
         Map<String, Object> config = new HashMap<>();
         config.put(Config.TOPOLOGY_SERIALIZED_MESSAGE_SIZE_METRICS, Boolean.TRUE);
         DeserializingConnectionCallback withMetrics =
-            new DeserializingConnectionCallback(config, mock(GeneralTopologyContext.class), mock(
-                WorkerState.ILocalTransferCallback.class));
+                new DeserializingConnectionCallback(config, mock(GeneralTopologyContext.class),
+                mock(
+                        WorkerState.ILocalTransferCallback.class));
 
         // Starting empty
         Object metrics = withMetrics.getValueAndReset();
         assertTrue(metrics instanceof Map);
-        assertTrue(((Map<?,?>) metrics).isEmpty());
+        assertTrue(((Map<?, ?>) metrics).isEmpty());
 
         // Add messages
         withMetrics.updateMetrics(123, message);
@@ -76,5 +119,324 @@ public class DeserializingConnectionCallbackTest {
         metrics = withMetrics.getValueAndReset();
         assertTrue(metrics instanceof Map);
         assertEquals(6L, ((Map<?, ?>) metrics).get("123-456"));
+    }
+
+    @Test
+    public void testTruncatedKryoPayloadDroppedAndBatchContinues() {
+        Map<String, Object> conf = baseConf();
+        byte[] full = serializedTuple(conf, new Values("a-string-long-enough-to-survive-truncation",
+                7));
+        byte[] truncated = Arrays.copyOf(full, full.length - 10);
+
+        assertThrows(KryoException.class, () -> new KryoTupleDeserializer(conf, context)
+                .deserialize(truncated));
+
+        assertBatchDeliversOnlyValidMessages(conf, truncated);
+    }
+
+    @Test
+    public void testUnknownSourceTaskDroppedAndBatchContinues() {
+        Map<String, Object> conf = baseConf();
+
+        TupleDeserializationException thrown = assertThrows(TupleDeserializationException.class,
+                () -> new KryoTupleDeserializer(conf, context)
+                .deserialize(unknownSourceTaskTuple()));
+        assertTrue(thrown.getMessage().contains("9999"),
+                "expected the task id in the message but was: " + thrown.getMessage());
+
+        assertBatchDeliversOnlyValidMessages(conf, unknownSourceTaskTuple());
+    }
+
+    @Test
+    public void testUnknownStreamIdDroppedAndBatchContinues() {
+        Map<String, Object> conf = baseConf();
+        // IdDictionary assigns ids 1..n to the component's n declared streams, so the first id past
+        // that count is undeclared.
+        int undeclaredStreamId = Utils.getComponentCommon(context.getRawTopology(),
+                SOURCE_COMPONENT).get_streams().size() + 1;
+        Output out = new Output(16, 32);
+        out.writeInt(SOURCE_TASK_ID, true); // source task that exists in the topology
+        out.writeInt(undeclaredStreamId, true);
+        byte[] unknownStream = out.toBytes();
+
+        TupleDeserializationException thrown = assertThrows(TupleDeserializationException.class,
+                () -> new KryoTupleDeserializer(conf, context).deserialize(unknownStream));
+        assertTrue(thrown.getMessage().contains(SOURCE_COMPONENT),
+                "expected the component name in the message but was: " + thrown.getMessage());
+
+        assertBatchDeliversOnlyValidMessages(conf, unknownStream);
+    }
+
+    @Test
+    public void testStrictModeMakesFailuresFatal() {
+        Map<String, Object> conf = baseConf();
+        conf.put(Config.TOPOLOGY_TUPLE_DESERIALIZATION_STRICT_ENABLE, true);
+        byte[] full = serializedTuple(conf, new Values("a-string-long-enough-to-survive-truncation",
+                7));
+        byte[] truncated = Arrays.copyOf(full, full.length - 10);
+
+        WorkerState.ILocalTransferCallback transfer =
+                mock(WorkerState.ILocalTransferCallback.class);
+        DeserializingConnectionCallback callback = new DeserializingConnectionCallback(conf,
+                context, transfer);
+
+        FatalDeserializationException thrown = assertThrows(FatalDeserializationException.class,
+                () -> callback.recv(Collections.singletonList(taskMessage(truncated))));
+        assertTrue(thrown.getCause() instanceof KryoException,
+                "expected a KryoException cause but was: " + thrown.getCause());
+
+        verify(transfer, never()).transfer(any());
+        assertEquals(0L, callback.getAndResetDeserializationFailures());
+    }
+
+    @Test
+    public void testStrictModeReportsNullPayloadAsFatal() {
+        Map<String, Object> conf = baseConf();
+        conf.put(Config.TOPOLOGY_TUPLE_DESERIALIZATION_STRICT_ENABLE, true);
+
+        WorkerState.ILocalTransferCallback transfer =
+                mock(WorkerState.ILocalTransferCallback.class);
+        DeserializingConnectionCallback callback = new DeserializingConnectionCallback(conf,
+                context, transfer);
+
+        FatalDeserializationException thrown = assertThrows(FatalDeserializationException.class,
+                () -> callback.recv(Collections.singletonList(taskMessage(null))));
+        assertTrue(thrown.getMessage().contains("-1 bytes"), "unexpected message: " + thrown
+                .getMessage());
+
+        verify(transfer, never()).transfer(any());
+    }
+
+    @Test
+    public void testStrictModeMakesUnknownTaskFailureFatal() {
+        Map<String, Object> conf = baseConf();
+        conf.put(Config.TOPOLOGY_TUPLE_DESERIALIZATION_STRICT_ENABLE, true);
+
+        WorkerState.ILocalTransferCallback transfer =
+                mock(WorkerState.ILocalTransferCallback.class);
+        DeserializingConnectionCallback callback = new DeserializingConnectionCallback(conf,
+                context, transfer);
+
+        FatalDeserializationException thrown = assertThrows(FatalDeserializationException.class,
+                () -> callback.recv(Collections
+                .singletonList(taskMessage(unknownSourceTaskTuple()))));
+        assertTrue(thrown.getCause() instanceof TupleDeserializationException,
+                "expected a TupleDeserializationException cause but was: " + thrown.getCause());
+
+        verify(transfer, never()).transfer(any());
+        assertEquals(0L, callback.getAndResetDeserializationFailures());
+    }
+
+    @Test
+    public void testStrictModeMakesIoExceptionFailureFatal() {
+        Map<String, Object> conf = baseConf();
+        conf.put(Config.TOPOLOGY_TUPLE_DESERIALIZATION_STRICT_ENABLE, true);
+        conf.put(Config.TOPOLOGY_TUPLE_COMPRESSION_ENABLE, true);
+        byte[] fakeZstd =
+            {(byte) 0x28, (byte) 0xB5, (byte) 0x2F, (byte) 0xFD, 0x00, 0x01, 0x02, 0x03};
+
+        WorkerState.ILocalTransferCallback transfer =
+                mock(WorkerState.ILocalTransferCallback.class);
+        DeserializingConnectionCallback callback = new DeserializingConnectionCallback(conf,
+                context, transfer);
+
+        FatalDeserializationException thrown = assertThrows(FatalDeserializationException.class,
+                () -> callback.recv(Collections.singletonList(taskMessage(fakeZstd))));
+        assertTrue(Utils.exceptionCauseIsInstanceOf(IOException.class, thrown),
+                "expected an IOException in the cause chain but was: " + thrown);
+
+        verify(transfer, never()).transfer(any());
+        assertEquals(0L, callback.getAndResetDeserializationFailures());
+    }
+
+    @Test
+    public void testJavaFallbackMissingClassDroppedAndBatchContinues() {
+        Map<String, Object> conf = baseConf();
+        conf.put(Config.TOPOLOGY_FALL_BACK_ON_JAVA_SERIALIZATION, true);
+        byte[] bytes = serializedTuple(conf, Collections.singletonList(new JavaSerializedValue()));
+        byte[] missingClass = replaceAll(bytes, "JavaSerializedValue", "JavaSerializedValuf");
+
+        RuntimeException thrown = assertThrows(RuntimeException.class,
+                () -> new KryoTupleDeserializer(conf, context).deserialize(missingClass));
+        assertTrue(Utils.exceptionCauseIsInstanceOf(ClassNotFoundException.class, thrown),
+                "expected a ClassNotFoundException in the cause chain but was: " + thrown);
+
+        assertBatchDeliversOnlyValidMessages(conf, missingClass);
+    }
+
+    @Test
+    public void testJavaFallbackNegativeLengthDroppedAndBatchContinues() {
+        Map<String, Object> conf = baseConf();
+        conf.put(Config.TOPOLOGY_FALL_BACK_ON_JAVA_SERIALIZATION, true);
+        byte[] bytes = serializedTuple(conf, Collections.singletonList(new JavaSerializedValue()));
+
+        // SerializableSerializer writes the java-serialization byte count right before the stream
+        // header;
+        // an all-bits-set count reads back as a negative length, which the serializer rejects
+        // before allocation.
+        int headerIdx = indexOf(bytes, JAVA_STREAM_HEADER, 0);
+        assertTrue(headerIdx >= 4, "java serialization header not found in tuple payload");
+        for (int i = 1; i <= 4; i++) {
+            bytes[headerIdx - i] = (byte) 0xFF;
+        }
+
+        assertThrows(KryoException.class, () -> new KryoTupleDeserializer(conf, context)
+                .deserialize(bytes));
+
+        assertBatchDeliversOnlyValidMessages(conf, bytes);
+    }
+
+    @Test
+    public void testIoExceptionFailureDroppedAndBatchContinues() {
+        Map<String, Object> conf = baseConf();
+        conf.put(Config.TOPOLOGY_TUPLE_COMPRESSION_ENABLE, true);
+        byte[] fakeZstd =
+            {(byte) 0x28, (byte) 0xB5, (byte) 0x2F, (byte) 0xFD, 0x00, 0x01, 0x02, 0x03};
+
+        RuntimeException thrown = assertThrows(RuntimeException.class,
+                () -> new KryoTupleDeserializer(conf, context).deserialize(fakeZstd.clone()));
+        assertTrue(Utils.exceptionCauseIsInstanceOf(IOException.class, thrown),
+                "expected an IOException in the cause chain but was: " + thrown);
+
+        assertBatchDeliversOnlyValidMessages(conf, fakeZstd);
+    }
+
+    @Test
+    public void testFailuresCountedSeparatelyFromSizeMetrics() {
+        Map<String, Object> conf = baseConf();
+        conf.put(Config.TOPOLOGY_SERIALIZED_MESSAGE_SIZE_METRICS, Boolean.TRUE);
+        WorkerState.ILocalTransferCallback transfer =
+                mock(WorkerState.ILocalTransferCallback.class);
+        DeserializingConnectionCallback callback = new DeserializingConnectionCallback(conf,
+                context, transfer);
+
+        callback.recv(Arrays.asList(
+                taskMessage(serializedTuple(conf, new Values("nathan", 1))),
+                taskMessage(new byte[] {1, 2, 3})));
+
+        Object metrics = callback.getValueAndReset();
+        assertTrue(metrics instanceof Map);
+        assertEquals(1, ((Map<?, ?>) metrics).size());
+        assertTrue(((Map<?, ?>) metrics).containsKey("1-2"));
+
+        assertEquals(1L, callback.getAndResetDeserializationFailures());
+        assertEquals(0L, callback.getAndResetDeserializationFailures());
+    }
+
+    @Test
+    public void testNonToleratedExceptionPropagates() throws Exception {
+        WorkerState.ILocalTransferCallback transfer =
+                mock(WorkerState.ILocalTransferCallback.class);
+        DeserializingConnectionCallback callback = new DeserializingConnectionCallback(baseConf(),
+                context, transfer);
+        KryoTupleDeserializer failing = mock(KryoTupleDeserializer.class);
+        when(failing.deserialize(any(byte[].class)))
+                .thenThrow(new IllegalStateException("injected"));
+        callback.setDeserializer(failing);
+
+        assertThrows(IllegalStateException.class,
+                () -> callback.recv(Collections.singletonList(taskMessage(new byte[] {1}))));
+
+        verify(transfer, never()).transfer(any());
+        assertEquals(0L, callback.getAndResetDeserializationFailures());
+        assertNull(callback.getValueAndReset());
+    }
+
+    @Test
+    public void testPostDecodeFailurePropagatesAndIsNotCounted() {
+        WorkerState.ILocalTransferCallback transfer =
+                mock(WorkerState.ILocalTransferCallback.class);
+        // IllegalArgumentException is a tolerated deserialization-failure type; throwing it from
+        // updateMetrics, which runs after a successful decode, proves the try scope covers decoding
+        // only.
+        DeserializingConnectionCallback callback = new DeserializingConnectionCallback(baseConf(),
+                context, transfer) {
+            @Override
+            protected void updateMetrics(int sourceTaskId, TaskMessage message) {
+                throw new IllegalArgumentException("injected after decode");
+            }
+        };
+
+        assertThrows(IllegalArgumentException.class,
+                () -> callback.recv(Collections.singletonList(
+                        taskMessage(serializedTuple(baseConf(), new Values("nathan", 1))))));
+
+        verify(transfer, never()).transfer(any());
+        assertEquals(0L, callback.getAndResetDeserializationFailures());
+    }
+
+    private void assertBatchDeliversOnlyValidMessages(Map<String, Object> conf, byte[] badPayload) {
+        WorkerState.ILocalTransferCallback transfer =
+                mock(WorkerState.ILocalTransferCallback.class);
+        DeserializingConnectionCallback callback = new DeserializingConnectionCallback(conf,
+                context, transfer);
+
+        callback.recv(Arrays.asList(
+                taskMessage(serializedTuple(conf, new Values("nathan", 1))),
+                taskMessage(badPayload),
+                taskMessage(serializedTuple(conf, new Values("golda", 2)))));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<ArrayList<AddressedTuple>> captor = ArgumentCaptor.forClass(ArrayList.class);
+        verify(transfer).transfer(captor.capture());
+        List<AddressedTuple> delivered = captor.getValue();
+        assertEquals(2, delivered.size());
+        assertEquals(DEST_TASK_ID, delivered.get(0).getDest());
+        assertEquals(new Values("nathan", 1), delivered.get(0).getTuple().getValues());
+        assertEquals(DEST_TASK_ID, delivered.get(1).getDest());
+        assertEquals(new Values("golda", 2), delivered.get(1).getTuple().getValues());
+
+        assertEquals(1L, callback.getAndResetDeserializationFailures());
+        assertNull(callback.getValueAndReset());
+    }
+
+    private static byte[] unknownSourceTaskTuple() {
+        Output out = new Output(16, 32);
+        out.writeInt(9999, true); // source task that does not exist in the topology
+        out.writeInt(1, true);    // default stream id
+        return out.toBytes();
+    }
+
+    private Map<String, Object> baseConf() {
+        Map<String, Object> conf = new HashMap<>(Utils.readStormConfig());
+        return conf;
+    }
+
+    private byte[] serializedTuple(Map<String, Object> conf, List<Object> values) {
+        TupleImpl tuple = new TupleImpl(context, values, SOURCE_COMPONENT, SOURCE_TASK_ID,
+                Utils.DEFAULT_STREAM_ID, MessageId.makeUnanchored());
+        return new KryoTupleSerializer(conf, context).serialize(tuple);
+    }
+
+    private static TaskMessage taskMessage(byte[] payload) {
+        return new TaskMessage(DEST_TASK_ID, payload);
+    }
+
+    private static byte[] replaceAll(byte[] src, String from, String to) {
+        byte[] out = src.clone();
+        byte[] fromBytes = from.getBytes(StandardCharsets.US_ASCII);
+        byte[] toBytes = to.getBytes(StandardCharsets.US_ASCII);
+        int idx = indexOf(out, fromBytes, 0);
+        while (idx >= 0) {
+            System.arraycopy(toBytes, 0, out, idx, toBytes.length);
+            idx = indexOf(out, fromBytes, idx + toBytes.length);
+        }
+        return out;
+    }
+
+    private static int indexOf(byte[] src, byte[] pattern, int from) {
+        outer:
+        for (int i = from; i <= src.length - pattern.length; i++) {
+            for (int j = 0; j < pattern.length; j++) {
+                if (src[i + j] != pattern[j]) {
+                    continue outer;
+                }
+            }
+            return i;
+        }
+        return -1;
+    }
+
+    private static class JavaSerializedValue implements Serializable {
     }
 }

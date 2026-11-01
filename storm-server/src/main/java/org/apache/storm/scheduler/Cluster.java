@@ -363,6 +363,42 @@ public class Cluster implements ISchedulingState {
         return desiredNumWorkers > assignedNumWorkers || getUnassignedExecutors(topology).size() > 0;
     }
 
+    /**
+     * Returns true when {@code supervisor} is a stable, non-blacklisted supervisor whose slots are all currently free --
+     * i.e. a returning idle supervisor the {@link EvenScheduler} idle-rebalance pass may relocate workers onto. The check
+     * is binary by design -- a supervisor either has zero used slots or it does not -- so the rebalance never fires for an
+     * "almost balanced" cluster. Stability is gated by {@link #hasMinimumIdleSupervisorStability(SupervisorDetails)} so a
+     * supervisor that has only just returned (and may still be flapping) is held back until it has been up long enough. The
+     * opt-in {@link DaemonConfig#NIMBUS_EVEN_REBALANCE_ON_IDLE_SUPERVISOR_ENABLED} flag is checked once by the caller
+     * ({@link EvenScheduler#redistributeOntoIdleSupervisors(Topologies, Cluster)}), not here.
+     */
+    public boolean isIdleSupervisorAvailableForEvenRebalance(SupervisorDetails supervisor) {
+        if (supervisor == null) {
+            return false;
+        }
+        if (isBlackListed(supervisor.getId())) {
+            return false;
+        }
+        if (supervisor.getAllPorts().isEmpty()) {
+            return false;
+        }
+        if (!getUsedPorts(supervisor).isEmpty()) {
+            return false;
+        }
+        return hasMinimumIdleSupervisorStability(supervisor);
+    }
+
+    private boolean hasMinimumIdleSupervisorStability(SupervisorDetails supervisor) {
+        int minStableRounds = ObjectReader.getInt(
+                conf.get(DaemonConfig.NIMBUS_EVEN_REBALANCE_IDLE_SUPERVISOR_MIN_STABLE_ROUNDS), 3);
+        if (minStableRounds <= 0) {
+            return true;
+        }
+        int monitorFrequencySecs = ObjectReader.getInt(conf.get(DaemonConfig.SUPERVISOR_MONITOR_FREQUENCY_SECS), 3);
+        long requiredUptimeSecs = (long) minStableRounds * Math.max(1, monitorFrequencySecs);
+        return supervisor.getUptimeSecs() >= requiredUptimeSecs;
+    }
+
     @Override
     public boolean needsSchedulingRas(TopologyDetails topology) {
         return getUnassignedExecutors(topology).size() > 0;
@@ -515,8 +551,8 @@ public class Cluster implements ISchedulingState {
     @Override
     public NormalizedResourceOffer getAvailableResources(SupervisorDetails sd) {
         NormalizedResourceOffer ret = new NormalizedResourceOffer(sd.getTotalResources());
-        for (SchedulerAssignment assignment: assignments.values()) {
-            for (Entry<WorkerSlot, WorkerResources> entry: assignment.getScheduledResources().entrySet()) {
+        for (SchedulerAssignment assignment : assignments.values()) {
+            for (Entry<WorkerSlot, WorkerResources> entry : assignment.getScheduledResources().entrySet()) {
                 if (sd.getId().equals(entry.getKey().getNodeId())) {
                     ret.remove(entry.getValue(), getResourceMetrics());
                 }
@@ -627,14 +663,12 @@ public class Cluster implements ISchedulingState {
         double cpuAvailable = resourcesAvailable.getTotalCpu();
 
         if (cpuAdded > cpuAvailable) {
-            if (LOG.isTraceEnabled()) {
-                LOG.trace("Could not schedule {}:{} on {} not enough CPU {} > {}",
-                        td.getName(),
-                        exec,
-                        ws,
-                        cpuAdded,
-                        cpuAvailable);
-            }
+            LOG.debug("Could not schedule {}:{} on {} not enough CPU {} > {}",
+                    td.getName(),
+                    exec,
+                    ws,
+                    cpuAdded,
+                    cpuAvailable);
             return false;
         }
 
@@ -642,25 +676,21 @@ public class Cluster implements ISchedulingState {
         double memoryAvailable = resourcesAvailable.getTotalMemoryMb();
 
         if (memoryAdded > memoryAvailable) {
-            if (LOG.isTraceEnabled()) {
-                LOG.trace("Could not schedule {}:{} on {} not enough Mem {} > {}",
-                          td.getName(),
-                          exec,
-                          ws,
-                          memoryAdded,
-                          memoryAvailable);
-            }
+            LOG.debug("Could not schedule {}:{} on {} not enough Mem {} > {}",
+                      td.getName(),
+                      exec,
+                      ws,
+                      memoryAdded,
+                      memoryAvailable);
             return false;
         }
         if (afterOnHeap > maxHeap) {
-            if (LOG.isTraceEnabled()) {
-                LOG.trace("Could not schedule {}:{} on {} HEAP would be too large {} > {}",
-                          td.getName(),
-                          exec,
-                          ws,
-                          afterOnHeap,
-                          maxHeap);
-            }
+            LOG.debug("Could not schedule {}:{} on {} HEAP would be too large {} > {}",
+                      td.getName(),
+                      exec,
+                      ws,
+                      afterOnHeap,
+                      maxHeap);
             return false;
         }
         return true;

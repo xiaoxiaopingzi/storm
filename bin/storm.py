@@ -23,6 +23,7 @@ import os
 import shlex
 import subprocess
 import sys
+from collections import Counter
 from random import randint
 
 from argparse import HelpFormatter
@@ -95,7 +96,6 @@ def confvalue(name, storm_config_opts, extrapaths, overriding_conf_file=None, da
         "-cp", get_classpath(extrajars=extrapaths, daemon=daemon), "org.apache.storm.command.ConfigValue", name
     ]
     output = subprocess.Popen(command, stdout=subprocess.PIPE).communicate()[0]
-    # python 3
     if not isinstance(output, str):
         output = output.decode('utf-8')
     lines = output.split(os.linesep)
@@ -108,6 +108,7 @@ def confvalue(name, storm_config_opts, extrapaths, overriding_conf_file=None, da
 
 def get_classpath(extrajars, daemon=True, client=False):
     ret = get_wildcard_dir(STORM_DIR)
+    ret.extend(get_wildcard_dir(STORM_COMMON_LIB_DIR))
     if client:
         ret.extend(get_wildcard_dir(STORM_WORKER_LIB_DIR))
     else:
@@ -126,9 +127,9 @@ def get_classpath(extrajars, daemon=True, client=False):
 def init_storm_env(within_unittest=False):
 
     global NORMAL_CLASS_PATH, STORM_DIR, USER_CONF_DIR, STORM_CONF_DIR, STORM_WORKER_LIB_DIR, STORM_LIB_DIR,\
-        STORM_TOOLS_LIB_DIR, STORM_WEBAPP_LIB_DIR, STORM_BIN_DIR, STORM_LOG4J2_CONF_DIR, STORM_SUPERVISOR_LOG_FILE,\
-        CLUSTER_CONF_DIR, JAR_JVM_OPTS, JAVA_HOME, JAVA_CMD, CONF_FILE, STORM_EXT_CLASSPATH, \
-        STORM_EXT_CLASSPATH_DAEMON, LOCAL_TTL_DEFAULT
+        STORM_COMMON_LIB_DIR, STORM_TOOLS_LIB_DIR, STORM_WEBAPP_LIB_DIR, STORM_BIN_DIR, STORM_LOG4J2_CONF_DIR,\
+        STORM_SUPERVISOR_LOG_FILE, CLUSTER_CONF_DIR, JAR_JVM_OPTS, JAVA_HOME, JAVA_CMD, CONF_FILE, \
+        STORM_EXT_CLASSPATH, STORM_EXT_CLASSPATH_DAEMON, LOCAL_TTL_DEFAULT
 
     NORMAL_CLASS_PATH = cygpath if sys.platform == 'cygwin' else identity
     STORM_DIR = os.sep.join(os.path.realpath( __file__ ).split(os.sep)[:-2])
@@ -142,6 +143,10 @@ def init_storm_env(within_unittest=False):
 
     STORM_WORKER_LIB_DIR = os.path.join(STORM_DIR, "lib-worker")
     STORM_LIB_DIR = os.path.join(STORM_DIR, "lib")
+    # Jars shared by the daemon (lib) and worker (lib-worker) classpaths are de-duplicated into
+    # lib-common to keep the distribution small. It is added to both classpaths; absent in older
+    # layouts, in which case it contributes nothing.
+    STORM_COMMON_LIB_DIR = os.path.join(STORM_DIR, "lib-common")
 
     STORM_TOOLS_LIB_DIR = os.path.join(STORM_DIR, "lib-tools")
     STORM_WEBAPP_LIB_DIR = os.path.join(STORM_DIR, "lib-webapp")
@@ -231,7 +236,7 @@ def resolve_dependencies(artifacts, artifact_repositories, maven_local_repos_dir
     try:
         out_dict = json.loads(output)
         return out_dict
-    except:
+    except Exception:
         raise RuntimeError(f"dependency handler returns non-json response: sysout<{output}>", )
 
 
@@ -316,7 +321,6 @@ def initialize_main_command():
     initialize_localconfvalue_subcommand(subparsers)
     initialize_remoteconfvalue_subcommand(subparsers)
     initialize_local_subcommand(subparsers)
-    initialize_sql_subcommand(subparsers)
     initialize_kill_subcommand(subparsers)
     initialize_upload_credentials_subcommand(subparsers)
     initialize_blobstore_subcommand(subparsers)
@@ -563,31 +567,6 @@ def initialize_upload_credentials_subcommand(subparsers):
 
     sub_parser.set_defaults(func=upload_credentials)
     add_common_options(sub_parser)
-
-
-def initialize_sql_subcommand(subparsers):
-    command_help = """Compiles the SQL statements into a Trident topology and submits it to Storm.
-    If user activates explain mode, SQL Runner analyzes each query statement
-    and shows query plan instead of submitting topology.
-    """
-
-    sub_parser = subparsers.add_parser("sql", help=command_help, formatter_class=SortingHelpFormatter)
-
-    add_client_jar_options(sub_parser)
-
-    sub_parser.add_argument("sql_file", metavar="sql-file")
-
-    group = sub_parser.add_mutually_exclusive_group(required=True)
-
-    group.add_argument(
-        "topology_name", metavar="topology-name",nargs='?'
-    )
-
-    group.add_argument("--explain", action="store_true", help="activate explain mode")
-
-    sub_parser.set_defaults(func=sql)
-    add_common_options(sub_parser, main_args=False)
-
 
 def initialize_blobstore_subcommand(subparsers):
     sub_parser = subparsers.add_parser("blobstore", formatter_class=SortingHelpFormatter)
@@ -905,7 +884,7 @@ def initialize_admin_subcommand(subparsers):
 def initialize_shell_subcommand(subparsers):
     command_help = """
     Archives resources to jar and uploads jar to Nimbus, and executes following arguments on "local". Useful for non JVM languages.
-    eg: `storm shell resources/ python topology.py arg1 arg2`"""
+    eg: `storm shell resources/ python3 topology.py arg1 arg2`"""
 
     sub_parser = subparsers.add_parser("shell", help=command_help, formatter_class=SortingHelpFormatter)
 
@@ -945,6 +924,10 @@ def initialize_pacemaker_subcommand(subparsers):
     command_help = """
     Launches the Pacemaker daemon. This command should be run under
     supervision with a tool like daemontools or monit.
+
+    Deprecated: Pacemaker is only kept for backward compatibility and will be
+    removed in a future release. By default workers heartbeat to their
+    supervisor, which reports them to Nimbus; no Pacemaker is needed.
 
     See Setting up a Storm cluster for more information.
     (https://storm.apache.org/documentation/Setting-up-a-Storm-cluster)
@@ -1066,7 +1049,7 @@ def initialize_monitor_subcommand(subparsers):
         "-i", "--interval", type=check_positive, default=None,
         help="""By default, poll-interval is 4 seconds"""
     )
-    sub_parser.add_argument("-m", "--component", type=check_positive, default=None)
+    sub_parser.add_argument("-m", "--component", default=None)
     sub_parser.add_argument("-s", "--stream", default=None)
     sub_parser.add_argument("-w", "--watch", default=None)
     sub_parser.set_defaults(func=monitor)
@@ -1087,45 +1070,6 @@ def local(args):
     run_client_jar(
         "org.apache.storm.LocalCluster", args,
         client=False, daemon=False, extrajvmopts=extrajvmopts)
-
-
-def sql(args):
-    local_jars = [arg for arg in args.jars.split(",") if arg]
-
-    artifact_to_file_jars = resolve_dependencies(
-        args.artifacts, args.artifactRepositories,
-        args.mavenLocalRepositoryDirectory, args.proxyUrl,
-        args.proxyUsername, args.proxyPassword
-    )
-
-    # include storm-sql-runtime jar(s) to local jar list
-    # --jars doesn't support wildcard so it should call get_jars_full
-    sql_runtime_jars = get_jars_full(os.path.join(STORM_TOOLS_LIB_DIR, "sql", "runtime"))
-    local_jars.extend(sql_runtime_jars)
-
-    extra_jars = [USER_CONF_DIR, STORM_BIN_DIR]
-    extra_jars.extend(local_jars)
-    extra_jars.extend(artifact_to_file_jars.values())
-
-    # include this for running StormSqlRunner, but not for generated topology
-    sql_core_jars = get_wildcard_dir(os.path.join(STORM_TOOLS_LIB_DIR, "sql", "core"))
-    extra_jars.extend(sql_core_jars)
-
-    if args.explain:
-        sql_args = ["--file", args.sql_file, "--explain"]
-    else:
-        sql_args = ["--file", args.sql_file, "--topology", args.topology_name]
-
-    exec_storm_class(
-        "org.apache.storm.sql.StormSqlRunner", storm_config_opts=args.storm_config_opts,
-        jvmtype="-client",
-        extrajars=extra_jars,
-        main_class_args=sql_args,
-        daemon=False,
-        jvmopts=["-Dstorm.dependency.jars=" + ",".join(local_jars)] +
-                ["-Dstorm.dependency.artifacts=" + json.dumps(artifact_to_file_jars)],
-        overriding_conf_file=args.config)
-
 
 def kill(args):
     exec_storm_class(
@@ -1192,7 +1136,7 @@ def set_log_level(args):
             if ":" in new_value:
                 _, timeout = new_value.split(":")
                 int(timeout)
-        except:
+        except Exception:
             raise argparse.ArgumentTypeError("Should be in the form[logger name]=[log level][:optional timeout]")
     exec_storm_class(
         "org.apache.storm.command.SetLogLevel",
@@ -1218,7 +1162,7 @@ def rebalance(args):
             new_value = int(new_value)
             if new_value < 0:
                 raise argparse.ArgumentTypeError("Executor count should be > 0")
-        except:
+        except Exception:
             raise argparse.ArgumentTypeError("Should be in the form component_name=new_executor_count")
     exec_storm_class(
         "org.apache.storm.command.Rebalance",
@@ -1486,6 +1430,40 @@ def monitor(args):
         extrajars=[USER_CONF_DIR, STORM_BIN_DIR])
 
 
+def merge_args_and_preserve_order(sys_args, known_args, unknown_args):
+    """
+    Attributes:
+     - sys_args: original system arguments
+     - known_args: tokens argparse recognized as a declared option or positional (e.g. raw_args.main_args
+       before reconstruction)
+     - unknown_args: tokens argparse did not recognize, as returned by parse_known_args()
+
+    Returns:
+        - merged: list containing tokes in the order they appear originally in sys_args, followed by any
+          tokens from known_args/unknown_args that could not be matched against sys_args (e.g. because they
+          were injected programmatically rather than typed on the command line).
+    """
+
+    known_args = list(known_args)
+    unknown_args = list(unknown_args)
+    remaining = Counter(known_args) + Counter(unknown_args)
+    merged = []
+
+    # Reorder 
+    for token in sys_args:
+        if remaining[token] > 0:
+            remaining[token] -= 1
+            merged.append(token)
+
+    if sum(remaining.values()) > 0:
+        for token in known_args + unknown_args:
+            if remaining[token] > 0:
+                remaining[token] -= 1
+                merged.append(token)
+
+    return merged
+
+
 def main():
     init_storm_env()
     storm_parser = initialize_main_command()
@@ -1494,7 +1472,7 @@ def main():
         sys.exit(1)
     raw_args, unknown_args = storm_parser.parse_known_args()
     if hasattr(raw_args, "main_args"):
-        raw_args.main_args += unknown_args
+        raw_args.main_args = merge_args_and_preserve_order(sys.argv, raw_args.main_args, unknown_args)
     raw_args.func(raw_args)
 
 

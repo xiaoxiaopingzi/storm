@@ -124,10 +124,27 @@ public class KeySequenceNumber {
     }
 
     public synchronized int getKeySequenceNumber(CuratorFramework zkClient) throws KeyNotFoundException {
+        return getKeySequenceNumber(zkClient, true);
+    }
+
+    /**
+     * Hand over the sequence number for the copy of the key held by this nimbus.
+     *
+     * @param zkClient     the zookeeper client
+     * @param mayCreateKey whether the key may be created when zookeeper does not know it, which is only right for the
+     *                     leader storing a blob that a client uploads. Any other nimbus mirrors a key the leader created,
+     *                     so a key zookeeper does not know was deleted and must not be registered again.
+     * @return the sequence number
+     * @throws KeyNotFoundException if the key is not in zookeeper and may not be created, or it is deleted meanwhile
+     */
+    public synchronized int getKeySequenceNumber(CuratorFramework zkClient, boolean mayCreateKey) throws KeyNotFoundException {
         TreeSet<Integer> sequenceNumbers = new TreeSet<Integer>();
         try {
             // Key has not been created yet and it is the first time it is being created
             if (zkClient.checkExists().forPath(BlobStoreUtils.getBlobStoreSubtree() + "/" + key) == null) {
+                if (!mayCreateKey) {
+                    throw new KeeperException.NoNodeException(BlobStoreUtils.getBlobStoreSubtree() + "/" + key);
+                }
                 zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT)
                         .withACL(ZooDefs.Ids.OPEN_ACL_UNSAFE).forPath(BLOBSTORE_MAX_KEY_SEQUENCE_SUBTREE + "/" + key);
                 zkClient.setData().forPath(BLOBSTORE_MAX_KEY_SEQUENCE_SUBTREE + "/" + key,

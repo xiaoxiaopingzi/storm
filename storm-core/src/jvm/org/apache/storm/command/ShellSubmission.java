@@ -15,7 +15,7 @@ package org.apache.storm.command;
 import java.util.Arrays;
 import java.util.Map;
 
-import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.storm.StormSubmitter;
 import org.apache.storm.generated.NimbusSummary;
 import org.apache.storm.utils.ConfigUtils;
@@ -33,7 +33,7 @@ public class ShellSubmission {
             System.exit(-1);
         }
         Map<String, Object> conf = ConfigUtils.readStormConfig();
-        try (NimbusClient client = NimbusClient.getConfiguredClient(conf)) {
+        try (NimbusClient client = NimbusClient.Builder.withConf(conf).build()) {
             NimbusSummary ns = client.getClient().getLeader();
             String host = ns.get_host();
             int port = ns.get_port();

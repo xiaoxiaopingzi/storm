@@ -17,6 +17,7 @@
  */
 #include "configuration.h"
 #include "worker-launcher.h"
+#include "oci/oci_launch_cmd.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -150,6 +151,126 @@ void test_check_user() {
   }
 }
 
+void test_validate_container_id() {
+  // well-formed: bare worker UUID and port-prefixed container id
+  if (!validate_container_id("85afb30b-286e-4d32-ab7a-9d5aad89bb88")) {
+    printf("FAIL: rejected valid worker id\n");
+    exit(1);
+  }
+  if (!validate_container_id("6702-85afb30b-286e-4d32-ab7a-9d5aad89bb88")) {
+    printf("FAIL: rejected valid container id\n");
+    exit(1);
+  }
+  // ids with characters outside [0-9a-fA-F-], or of the wrong length, are rejected.
+  // this one is a valid length (40) so it exercises the character check, not the length check.
+  if (validate_container_id("6702-85afb30b-286e-4d32-ab7a-9d5aad89bZZ")) {
+    printf("FAIL: accepted id with disallowed characters\n");
+    exit(1);
+  }
+  if (validate_container_id("6702/85afb30b-286e-4d32-ab7a-9d5aad89bb88")) {
+    printf("FAIL: accepted id containing a slash\n");
+    exit(1);
+  }
+  if (validate_container_id("85afb30b-286e-4d32-ab7a-9d5aad89bb88-aaaaaaaa")) {
+    printf("FAIL: accepted id that is too long\n");
+    exit(1);
+  }
+  if (validate_container_id("")) {
+    printf("FAIL: accepted empty id\n");
+    exit(1);
+  }
+  if (validate_container_id("abc")) {
+    printf("FAIL: accepted too-short id\n");
+    exit(1);
+  }
+}
+
+// Fail the test (with a message) unless the condition holds.
+#define EXPECT(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", (msg)); exit(1); } } while (0)
+
+// Path helpers used by is_valid_mount_source. No config needed.
+void test_mount_path_helpers() {
+  // has_relative_path_component: only real "." / ".." components count
+  EXPECT(!has_relative_path_component("/data/storm"), "clean path flagged as relative");
+  EXPECT(!has_relative_path_component("/data/storm/resolv.conf"), "clean nested path flagged as relative");
+  EXPECT(has_relative_path_component("/data/../etc"), "'..' component not detected");
+  EXPECT(has_relative_path_component("/data/./x"), "'.' component not detected");
+  EXPECT(has_relative_path_component("/.."), "leading '..' not detected");
+  EXPECT(has_relative_path_component("/a/b/.."), "trailing '..' not detected");
+  EXPECT(!has_relative_path_component("/data/..storm"), "'..storm' wrongly treated as '..'");
+  EXPECT(!has_relative_path_component("/data/storm."), "'storm.' wrongly treated as '.'");
+  EXPECT(!has_relative_path_component(""), "empty path flagged as relative");
+
+  // is_mount_source_under: whole-component containment
+  EXPECT(is_mount_source_under("/data/storm/x", "/data/storm"), "path under allowed dir rejected");
+  EXPECT(is_mount_source_under("/data/storm", "/data/storm"), "allowed dir itself rejected");
+  EXPECT(is_mount_source_under("/data/storm/a/b", "/data/storm"), "deep path under allowed dir rejected");
+  EXPECT(!is_mount_source_under("/data/storm-evil/x", "/data/storm"), "dir with shared name prefix accepted");
+  EXPECT(!is_mount_source_under("/data/stormx", "/data/storm"), "prefix without separator accepted");
+  EXPECT(is_mount_source_under("/data/storm/x", "/data/storm/"), "trailing slash in allowed dir not tolerated");
+  EXPECT(is_mount_source_under("/data/storm", "/data/storm/"), "trailing slash vs equal path not tolerated");
+  EXPECT(!is_mount_source_under("/data", "/data/storm"), "parent of allowed dir accepted");
+  EXPECT(!is_mount_source_under("/etc/passwd", "/data/storm"), "unrelated path accepted");
+}
+
+// is_valid_mount_source resolves paths with realpath and reads global config, so it needs a real
+// tree and is run via run_test_in_child to keep read_config from leaking into later tests. The
+// rejected cases print to stderr, which is expected.
+void test_mount_source_allowed_dirs() {
+  // A real tree, since is_valid_mount_source now resolves with realpath:
+  //   .../allowed            an allow-listed directory
+  //   .../allowed/real.conf  a real file under it
+  //   .../allowed/escape     a symlink under it that points outside it
+  //   .../allowed-evil       a sibling whose name shares the prefix
+  //   .../outside/secret     a file outside every allowed directory
+  const char* base      = TEST_ROOT "/mounts";
+  const char* allowed   = TEST_ROOT "/mounts/allowed";
+  const char* real_conf = TEST_ROOT "/mounts/allowed/real.conf";
+  const char* escape    = TEST_ROOT "/mounts/allowed/escape";
+  const char* evil      = TEST_ROOT "/mounts/allowed-evil";
+  const char* outside   = TEST_ROOT "/mounts/outside";
+  const char* secret    = TEST_ROOT "/mounts/outside/secret";
+
+  EXPECT(mkdir(base, 0755) == 0 || errno == EEXIST, "could not create mounts base");
+  EXPECT(mkdir(allowed, 0755) == 0 || errno == EEXIST, "could not create allowed dir");
+  EXPECT(mkdir(evil, 0755) == 0 || errno == EEXIST, "could not create sibling dir");
+  EXPECT(mkdir(outside, 0755) == 0 || errno == EEXIST, "could not create outside dir");
+  FILE* rc = fopen(real_conf, "w");
+  EXPECT(rc != NULL, "could not create real.conf");
+  fclose(rc);
+  FILE* sc = fopen(secret, "w");
+  EXPECT(sc != NULL, "could not create secret");
+  fclose(sc);
+  EXPECT(symlink(secret, escape) == 0 || errno == EEXIST, "could not create escaping symlink");
+
+  const char* cfg = TEST_ROOT "/mount-allowed.cfg";
+  FILE* f = fopen(cfg, "w");
+  EXPECT(f != NULL, "could not write mount-allowed.cfg");
+  fprintf(f, "min.user.id=%d\n", getuid());
+  fprintf(f, "worker.launcher.oci.allowed.mount.source.dirs=%s\n", allowed);
+  fclose(f);
+  read_config(cfg);
+
+  EXPECT(is_valid_mount_source(allowed), "allowed dir itself rejected");
+  EXPECT(is_valid_mount_source(real_conf), "real path under allowed dir rejected");
+  // the key case: a symlink under the allowed dir that resolves outside it must be rejected
+  EXPECT(!is_valid_mount_source(escape), "symlink resolving outside the allowed dir accepted");
+  EXPECT(!is_valid_mount_source(secret), "path outside all allowed dirs accepted");
+  EXPECT(!is_valid_mount_source(evil), "sibling dir with shared name prefix accepted");
+  EXPECT(!is_valid_mount_source(TEST_ROOT "/mounts/does-not-exist"), "unresolvable source accepted");
+  EXPECT(!is_valid_mount_source("relative/path"), "non-absolute path accepted");
+
+  // With no directories configured, every source is rejected.
+  const char* cfg_none = TEST_ROOT "/mount-none.cfg";
+  f = fopen(cfg_none, "w");
+  EXPECT(f != NULL, "could not write mount-none.cfg");
+  fprintf(f, "min.user.id=%d\n", getuid());
+  fclose(f);
+  read_config(cfg_none);
+
+  EXPECT(!is_valid_mount_source(allowed), "source accepted with no directories configured");
+}
+
 void test_check_configuration_permissions() {
   printf("\nTesting check_configuration_permissions\n");
   if (check_configuration_permissions("/etc/passwd") != 0) {
@@ -263,13 +384,146 @@ void test_signal_container_group() {
   }
 }
 
+// get_values must return an independently owned, NULL-terminated array for any
+// value, including ones with leading, trailing, or only delimiters, so that
+// free_values can release it without freeing an interior pointer of the parsed
+// buffer. Run in a child (via run_test_in_child) so the temporary config that
+// read_config installs does not leak into later tests.
+void test_get_values_degenerate() {
+  const char* cfg = TEST_ROOT "/get-values.cfg";
+  FILE* f = fopen(cfg, "w");
+  if (f == NULL) {
+    printf("FAIL: could not write %s\n", cfg);
+    exit(1);
+  }
+  fprintf(f, "test.values.normal=a,b,c\n");
+  fprintf(f, "test.values.leading=,a,b\n");
+  fprintf(f, "test.values.trailing=a,b,\n");
+  fprintf(f, "test.values.only.delims=,,\n");
+  fclose(f);
+  read_config(cfg);
+
+  char** v = get_values("test.values.normal");
+  if (v == NULL || v[0] == NULL || strcmp(v[0], "a") != 0
+      || v[1] == NULL || strcmp(v[1], "b") != 0
+      || v[2] == NULL || strcmp(v[2], "c") != 0 || v[3] != NULL) {
+    printf("FAIL: get_values did not return [a,b,c] for a normal value\n");
+    exit(1);
+  }
+  free_values(v);
+
+  // A leading delimiter makes the first token an interior pointer of the parsed
+  // buffer; get_values must still yield [a,b] and free_values must not choke.
+  v = get_values("test.values.leading");
+  if (v == NULL || v[0] == NULL || strcmp(v[0], "a") != 0
+      || v[1] == NULL || strcmp(v[1], "b") != 0 || v[2] != NULL) {
+    printf("FAIL: get_values did not return [a,b] for a leading-delimiter value\n");
+    exit(1);
+  }
+  free_values(v);
+
+  v = get_values("test.values.trailing");
+  if (v == NULL || v[0] == NULL || strcmp(v[0], "a") != 0
+      || v[1] == NULL || strcmp(v[1], "b") != 0 || v[2] != NULL) {
+    printf("FAIL: get_values did not return [a,b] for a trailing-delimiter value\n");
+    exit(1);
+  }
+  free_values(v);
+
+  // Only delimiters: an empty but NULL-terminated array, not an unterminated one.
+  v = get_values("test.values.only.delims");
+  if (v == NULL || v[0] != NULL) {
+    printf("FAIL: get_values did not return an empty terminated array for a delimiter-only value\n");
+    exit(1);
+  }
+  free_values(v);
+
+  printf("get_values degenerate-value handling OK\n");
+}
+
+// oci_launch_cmd_matches_user backs the check in main.c that a launch command
+// file's username matches the user the worker-launcher was invoked for.
+void test_oci_launch_cmd_matches_user() {
+  oci_launch_cmd olc;
+  memset(&olc, 0, sizeof(olc));
+  olc.username = "alice";
+  EXPECT(oci_launch_cmd_matches_user(&olc, "alice"), "matching username rejected");
+  EXPECT(!oci_launch_cmd_matches_user(&olc, "bob"), "mismatched username accepted");
+  olc.username = NULL;
+  EXPECT(!oci_launch_cmd_matches_user(&olc, "alice"), "command with no username accepted");
+  EXPECT(!oci_launch_cmd_matches_user(NULL, "alice"), "null command accepted");
+}
+
+// Write a launch command file that is valid except for the bind-mount source,
+// which is set to mount_source.
+static void write_olc_file(const char* path, const char* mount_source) {
+  FILE* f = fopen(path, "w");
+  EXPECT(f != NULL, "could not write launch command file");
+  fprintf(f,
+    "{\n"
+    "  \"username\": \"olcuser\",\n"
+    "  \"containerId\": \"85afb30b-286e-4d32-ab7a-9d5aad89bb88\",\n"
+    "  \"pidFile\": \"" TEST_ROOT "/olc/pid\",\n"
+    "  \"containerScriptPath\": \"" TEST_ROOT "/olc/script.sh\",\n"
+    "  \"reapLayerKeepCount\": 0,\n"
+    "  \"layers\": [ { \"mediaType\": \"application/vnd.squashfs\", \"path\": \"/layer\" } ],\n"
+    "  \"ociRuntimeConfig\": {\n"
+    "    \"linux\": { \"cgroupsPath\": \"/storm\" },\n"
+    "    \"process\": { \"args\": [\"/bin/true\"], \"cwd\": \"/\", \"env\": [\"A=B\"] },\n"
+    "    \"mounts\": [ { \"type\": \"bind\", \"source\": \"%s\", \"destination\": \"/dst\", \"options\": [\"rbind\", \"rprivate\"] } ]\n"
+    "  }\n"
+    "}\n", mount_source);
+  fclose(f);
+}
+
+// parse_oci_launch_cmd runs the bind-mount allow-list check (is_valid_mount ->
+// is_valid_mount_source) as part of validation, so a launch command whose mount
+// source is outside the configured directories must fail to parse. The source
+// is resolved with realpath, so build a real tree; run in a child so the
+// temporary config does not leak into later tests.
+void test_oci_parse_launch_cmd_mounts() {
+  const char* base     = TEST_ROOT "/olc";
+  const char* allowed  = TEST_ROOT "/olc/allowed";
+  const char* good_src = TEST_ROOT "/olc/allowed/mount.conf";
+  const char* bad_src  = TEST_ROOT "/olc/outside.conf";
+  EXPECT(mkdir(base, 0755) == 0 || errno == EEXIST, "could not create olc base");
+  EXPECT(mkdir(allowed, 0755) == 0 || errno == EEXIST, "could not create allowed dir");
+  FILE* g = fopen(good_src, "w"); EXPECT(g != NULL, "could not create mount.conf"); fclose(g);
+  FILE* b = fopen(bad_src, "w"); EXPECT(b != NULL, "could not create outside.conf"); fclose(b);
+
+  const char* cfg = TEST_ROOT "/olc/wl.cfg";
+  FILE* c = fopen(cfg, "w");
+  EXPECT(c != NULL, "could not write wl.cfg");
+  fprintf(c, "min.user.id=%d\n", getuid());
+  fprintf(c, "worker.launcher.oci.allowed.mount.source.dirs=%s\n", allowed);
+  fclose(c);
+  read_config(cfg);
+
+  const char* good_cmd = TEST_ROOT "/olc/good.json";
+  const char* bad_cmd  = TEST_ROOT "/olc/bad.json";
+  write_olc_file(good_cmd, good_src);
+  write_olc_file(bad_cmd, bad_src);
+
+  oci_launch_cmd* olc = parse_oci_launch_cmd(good_cmd);
+  EXPECT(olc != NULL, "launch command with an allowed mount source rejected");
+  free_oci_launch_cmd(olc);
+
+  // the key case: the mount hookup must reject a source outside the allowed dirs
+  olc = parse_oci_launch_cmd(bad_cmd);
+  EXPECT(olc == NULL, "launch command with a mount source outside the allowed dirs accepted");
+
+  printf("parse_oci_launch_cmd mount-source enforcement OK\n");
+}
+
 int main(int argc, char **argv) {
   LOGFILE = stdout;
   ERRORFILE = stderr;
   int my_username = 0;
 
   // clean up any junk from previous run
-  system("chmod -R u=rwx " TEST_ROOT "; rm -fr " TEST_ROOT);
+  if (system("chmod -R u=rwx " TEST_ROOT "; rm -fr " TEST_ROOT) != 0) {
+    printf("WARNING: could not clean up previous test directory\n");
+  }
   
   if (mkdirs(TEST_ROOT "/logs/userlogs", 0755) != 0) {
     exit(1);
@@ -310,12 +564,27 @@ int main(int argc, char **argv) {
   printf("\nTesting check_user()\n");
   test_check_user();
 
+  printf("\nTesting validate_container_id()\n");
+  test_validate_container_id();
+
   // the tests that change user need to be run in a subshell, so that
   // when they change user they don't give up our privs
+  printf("\nTesting mount path helpers\n");
+  test_mount_path_helpers();
+
+  printf("\nTesting oci_launch_cmd_matches_user\n");
+  test_oci_launch_cmd_matches_user();
+
+  run_test_in_child("test_mount_source_allowed_dirs", test_mount_source_allowed_dirs);
+  run_test_in_child("test_oci_parse_launch_cmd_mounts", test_oci_parse_launch_cmd_mounts);
+
   run_test_in_child("test_signal_container", test_signal_container);
   run_test_in_child("test_signal_container_group", test_signal_container_group);
+  run_test_in_child("test_get_values_degenerate", test_get_values_degenerate);
 
-  seteuid(0);
+  if (seteuid(0) != 0) {
+    printf("WARNING: unable to reacquire root - %s\n", strerror(errno));
+  }
   run("rm -fr " TEST_ROOT);
   printf("\nFinished tests\n");
 

@@ -29,14 +29,26 @@ import org.apache.storm.generated.SpoutAggregateStats;
 import org.apache.storm.generated.TopologyPageInfo;
 import org.apache.storm.generated.TopologyStats;
 import org.apache.storm.utils.Time;
-import org.json.simple.JSONValue;
+import net.minidev.json.JSONValue;
+import org.eclipse.jetty.ee10.servlet.FilterHolder;
+import org.eclipse.jetty.ee10.servlets.CrossOriginFilter;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.server.SslConnectionFactory;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -102,6 +114,8 @@ class UIHelpersTest {
     void cleanup() {
         // Stop simulating time
         mockTime.close();
+        // Restore the default of ui.enable.jsonp
+        UIHelpers.setJsonpEnabled(false);
     }
 
     /**
@@ -591,5 +605,136 @@ class UIHelpersTest {
             .filter((entry) -> spoutId.equals(entry.get("spoutId")))
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("Unable to find entry for spoutId '" + spoutId + "'"));
+    }
+
+    @Test
+    public void testGetJsonResponseBodyNoCallbackReturnsJson() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("a", 1);
+        String body = UIHelpers.getJsonResponseBody(data, null, true);
+        assertEquals("{\"a\":1}", body);
+    }
+
+    @Test
+    public void testGetJsonResponseBodyValidCallbackIsWrapped() {
+        UIHelpers.setJsonpEnabled(true);
+        Map<String, Object> data = new HashMap<>();
+        data.put("a", 1);
+        String body = UIHelpers.getJsonResponseBody(data, "myCb", true);
+        assertEquals("myCb({\"a\":1});", body);
+    }
+
+    @Test
+    public void testGetJsonResponseBodyValidDottedCallbackIsWrapped() {
+        UIHelpers.setJsonpEnabled(true);
+        String body = UIHelpers.getJsonResponseBody("{\"x\":1}", "foo.bar.$baz_0", false);
+        assertEquals("foo.bar.$baz_0({\"x\":1});", body);
+    }
+
+    @Test
+    public void testGetJsonResponseBodyInvalidCallbackFallsBackToJson() {
+        UIHelpers.setJsonpEnabled(true);
+        Map<String, Object> data = new HashMap<>();
+        data.put("a", 1);
+        String body = UIHelpers.getJsonResponseBody(data, "alert(document.cookie)//", true);
+        assertEquals("{\"a\":1}", body);
+    }
+
+    @Test
+    public void testGetJsonResponseBodyEmptyCallbackFallsBackToJson() {
+        UIHelpers.setJsonpEnabled(true);
+        String body = UIHelpers.getJsonResponseBody("{\"x\":1}", "", false);
+        assertEquals("{\"x\":1}", body);
+    }
+
+    @Test
+    public void testGetJsonResponseBodyTooLongCallbackFallsBackToJson() {
+        UIHelpers.setJsonpEnabled(true);
+        StringBuilder sb = new StringBuilder("cb");
+        for (int i = 0; i < 200; i++) {
+            sb.append('x');
+        }
+        String body = UIHelpers.getJsonResponseBody("{\"x\":1}", sb.toString(), false);
+        assertEquals("{\"x\":1}", body);
+    }
+
+    @Test
+    public void testGetJsonResponseBodyRejectsCallbacksStartingWithDigit() {
+        UIHelpers.setJsonpEnabled(true);
+        String body = UIHelpers.getJsonResponseBody("{\"x\":1}", "1cb", false);
+        assertEquals("{\"x\":1}", body);
+    }
+
+    @Test
+    public void testGetJsonResponseBodyCallbackIgnoredWhenJsonpDisabled() {
+        UIHelpers.setJsonpEnabled(false);
+        Map<String, Object> data = new HashMap<>();
+        data.put("a", 1);
+        String body = UIHelpers.getJsonResponseBody(data, "myCb", true);
+        assertEquals("{\"a\":1}", body);
+    }
+
+    @Test
+    public void testGetJsonResponseHeadersNoCallbackUsesJsonContentType() {
+        Map headers = UIHelpers.getJsonResponseHeaders(null, null);
+        assertEquals("application/json;charset=utf-8", headers.get("Content-Type"));
+        assertEquals("nosniff", headers.get("X-Content-Type-Options"));
+    }
+
+    @Test
+    public void testGetJsonResponseHeadersValidCallbackUsesJavaScriptContentType() {
+        UIHelpers.setJsonpEnabled(true);
+        Map headers = UIHelpers.getJsonResponseHeaders("myCb", null);
+        assertEquals("application/javascript;charset=utf-8", headers.get("Content-Type"));
+        assertEquals("nosniff", headers.get("X-Content-Type-Options"));
+    }
+
+    @Test
+    public void testGetJsonResponseHeadersInvalidCallbackFallsBackToJsonContentType() {
+        UIHelpers.setJsonpEnabled(true);
+        Map headers = UIHelpers.getJsonResponseHeaders("alert(1)//", null);
+        assertEquals("application/json;charset=utf-8", headers.get("Content-Type"));
+        assertEquals("nosniff", headers.get("X-Content-Type-Options"));
+    }
+
+    @Test
+    public void testGetJsonResponseHeadersCallbackIgnoredWhenJsonpDisabled() {
+        UIHelpers.setJsonpEnabled(false);
+        Map headers = UIHelpers.getJsonResponseHeaders("myCb", null);
+        assertEquals("application/json;charset=utf-8", headers.get("Content-Type"));
+        assertEquals("nosniff", headers.get("X-Content-Type-Options"));
+    }
+
+    @Test
+    public void testConfigSslKeepsJettyDefaultTlsExclusions(@TempDir Path tempDir) throws Exception {
+        SslContextFactory.Server defaults = new SslContextFactory.Server();
+        Set<String> expectedProtocols = new LinkedHashSet<>(Arrays.asList(defaults.getExcludeProtocols()));
+        Set<String> expectedCiphers = new LinkedHashSet<>(Arrays.asList(defaults.getExcludeCipherSuites()));
+        assertFalse(expectedProtocols.isEmpty());
+        assertFalse(expectedCiphers.isEmpty());
+        expectedProtocols.add("SSLv3");
+        expectedCiphers.add("SSL_RSA_WITH_RC4_128_MD5");
+        expectedCiphers.add("SSL_RSA_WITH_RC4_128_SHA");
+
+        Path keyStore = Files.createFile(tempDir.resolve("keystore.jks"));
+        Server server = new Server();
+        UIHelpers.configSsl(server, 8443, keyStore.toString(), "password", "JKS", "password",
+                null, null, null, false, false, false);
+
+        ServerConnector connector = (ServerConnector) server.getConnectors()[0];
+        SslContextFactory factory = connector.getConnectionFactory(SslConnectionFactory.class).getSslContextFactory();
+        assertEquals(expectedProtocols, new LinkedHashSet<>(Arrays.asList(factory.getExcludeProtocols())));
+        assertEquals(expectedCiphers, new LinkedHashSet<>(Arrays.asList(factory.getExcludeCipherSuites())));
+    }
+
+    @Test
+    public void testCorsFilterHandleSetsExplicitInitParameters() {
+        FilterHolder filterHolder = UIHelpers.corsFilterHandle();
+        assertEquals("*", filterHolder.getInitParameter(CrossOriginFilter.ALLOWED_ORIGINS_PARAM));
+        assertEquals("GET, POST, PUT", filterHolder.getInitParameter(CrossOriginFilter.ALLOWED_METHODS_PARAM));
+        assertEquals("X-Requested-With, X-Requested-By, Access-Control-Allow-Origin,"
+                + " Content-Type, Content-Length, Accept, Origin",
+                filterHolder.getInitParameter(CrossOriginFilter.ALLOWED_HEADERS_PARAM));
+        assertEquals("false", filterHolder.getInitParameter(CrossOriginFilter.ALLOW_CREDENTIALS_PARAM));
     }
 }

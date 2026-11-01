@@ -33,7 +33,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.storm.Config;
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.container.ResourceIsolationInterface;
@@ -50,6 +50,7 @@ import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.LocalState;
 import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.ServerConfigUtils;
+import org.apache.storm.utils.ServerUtils;
 import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -111,9 +112,15 @@ public abstract class Container implements Killable {
         int port, LocalAssignment assignment, ResourceIsolationInterface resourceIsolationManager,
         String workerId, Map<String, Object> topoConf, AdvancedFSOps ops,
         StormMetricsRegistry metricsRegistry, ContainerMemoryTracker containerMemoryTracker) throws IOException {
-        assert (type != null);
-        assert (conf != null);
-        assert (supervisorId != null);
+        if (type == null) {
+            throw new IOException("ContainerType parameter is null");
+        }
+        if (conf == null) {
+            throw new IOException("conf parameter value is null");
+        }
+        if (supervisorId == null) {
+            throw new IOException("SupervisorId parameter value is null");
+        }
 
         symlinksDisabled = (boolean) conf.getOrDefault(Config.DISABLE_SYMLINKS, false);
 
@@ -137,14 +144,24 @@ public abstract class Container implements Killable {
         }
 
         if (this.type.isOnlyKillable()) {
-            assert (this.assignment == null);
-            assert (this.port <= 0);
-            assert (this.workerId != null);
+            if (this.assignment != null) {
+                throw new IOException("With ContainerType==OnlyKillable, expecting LocalAssignment member variable to be null");
+            }
+            if (this.port > 0) {
+                throw new IOException("With ContainerType==OnlyKillable, expecting port member variable <=0 but found " + this.port);
+            }
+            if (this.workerId == null) {
+                throw new IOException("With ContainerType==OnlyKillable, expecting WorkerId member variable to be assigned");
+            }
             topologyId = null;
             this.topoConf = null;
         } else {
-            assert (assignment != null);
-            assert (port > 0);
+            if (this.assignment == null) {
+                throw new IOException("With ContainerType!=OnlyKillable, expecting LocalAssignment member variable to be assigned");
+            }
+            if (this.port <= 0) {
+                throw new IOException("With ContainerType!=OnlyKillable, expecting port member variable >0 but found " + this.port);
+            }
             topologyId = assignment.get_topology_id();
             if (!this.ops.doRequiredTopoFilesExist(this.conf, topologyId)) {
                 LOG.info(
@@ -175,7 +192,9 @@ public abstract class Container implements Killable {
     }
 
     protected Map<String, Object> readTopoConf() throws IOException {
-        assert (topologyId != null);
+        if (topologyId == null) {
+            throw new IOException("Cannot readTopoConf: member variable topologyId is null");
+        }
         return ConfigUtils.readSupervisorStormConf(conf, topologyId);
     }
 
@@ -392,8 +411,9 @@ public abstract class Container implements Killable {
                     targetResourcesDir.toString());
             }
             for (String fileName : blobFileNames) {
-                ops.createSymlink(new File(workerRoot, fileName),
-                    new File(stormRoot, fileName));
+                // the localname may come from the topology conf, it must not point outside of the worker/dist dirs
+                ops.createSymlink(ServerUtils.resolveTopologyConfSuppliedName(new File(workerRoot), fileName),
+                    ServerUtils.resolveTopologyConfSuppliedName(new File(stormRoot), fileName));
             }
         } else if (blobFileNames.size() > 0) {
             LOG.warn("Symlinks are disabled, no symlinks created for blobs {}", blobFileNames);

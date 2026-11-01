@@ -27,6 +27,7 @@ public class TupleImpl implements Tuple {
     private Long processSampleStartTime;
     private Long executeSampleStartTime;
     private long outAckVal = 0;
+    private Object traceContext;
 
     public TupleImpl(Tuple t) {
         this.values = t.getValues();
@@ -40,12 +41,14 @@ public class TupleImpl implements Tuple {
             this.processSampleStartTime = ti.processSampleStartTime;
             this.executeSampleStartTime = ti.executeSampleStartTime;
             this.outAckVal = ti.outAckVal;
+            this.traceContext = ti.traceContext;
         } catch (ClassCastException e) {
             // ignore ... if t is not a TupleImpl type .. faster than checking and then casting
         }
     }
 
-    public TupleImpl(GeneralTopologyContext context, List<Object> values, String srcComponent, int taskId, String streamId, MessageId id) {
+    public TupleImpl(GeneralTopologyContext context, List<Object> values, String srcComponent,
+            int taskId, String streamId, MessageId id) {
         this.values = context.doSanityCheck() ? Collections.unmodifiableList(values) : values;
         this.taskId = taskId;
         this.streamId = streamId;
@@ -57,13 +60,15 @@ public class TupleImpl implements Tuple {
             String componentId = context.getComponentId(taskId);
             Fields schema = context.getComponentOutputFields(componentId, streamId);
             if (values.size() != schema.size()) {
-                throw new IllegalArgumentException("Tuple created with wrong number of fields. Expected " + schema.size()
-                                                   + " fields but got " + values.size() + " fields");
+                throw new IllegalArgumentException("Tuple created with wrong number of fields. "
+                        + "Expected " + schema.size()
+                        + " fields but got " + values.size() + " fields");
             }
         }
     }
 
-    public TupleImpl(GeneralTopologyContext context, List<Object> values, String srcComponent, int taskId, String streamId) {
+    public TupleImpl(GeneralTopologyContext context, List<Object> values, String srcComponent,
+            int taskId, String streamId) {
         this(context, values, srcComponent, taskId, streamId, MessageId.makeUnanchored());
     }
 
@@ -81,6 +86,21 @@ public class TupleImpl implements Tuple {
 
     public void setExecuteSampleStartTime(long ms) {
         executeSampleStartTime = ms;
+    }
+
+    /**
+     * Returns the trace context this tuple carries, or null. The context is created by the configured
+     * {@link org.apache.storm.tracing.TupleTracer}.
+     */
+    public Object getTraceContext() {
+        return traceContext;
+    }
+
+    /**
+     * Sets the trace context this tuple carries; null removes it.
+     */
+    public void setTraceContext(Object traceContext) {
+        this.traceContext = traceContext;
     }
 
     public void updateAckVal(long val) {

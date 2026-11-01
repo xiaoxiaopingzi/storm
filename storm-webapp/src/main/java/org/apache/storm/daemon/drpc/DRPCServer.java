@@ -20,11 +20,11 @@ package org.apache.storm.daemon.drpc;
 
 import com.codahale.metrics.Meter;
 import com.google.common.annotations.VisibleForTesting;
+import jakarta.servlet.DispatcherType;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
-import javax.servlet.DispatcherType;
 import org.apache.storm.Config;
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.daemon.drpc.webapp.DRPCApplication;
@@ -41,11 +41,11 @@ import org.apache.storm.security.auth.ThriftServer;
 import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.Utils;
+import org.eclipse.jetty.ee10.servlet.FilterHolder;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.servlet.FilterHolder;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +55,7 @@ public class DRPCServer implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(DRPCServer.class);
     private final Meter meterShutdownCalls;
    
-    //TODO in the future this might be better in a common webapp location
+    //TODO: in the future this might be better in a common webapp location
 
     /**
      * Add a request context filter to the Servlet Context Handler.
@@ -106,7 +106,7 @@ public class DRPCServer implements AutoCloseable {
             final Boolean disableHttpBinding = (Boolean) (conf.get(DaemonConfig.DRPC_DISABLE_HTTP_BINDING));
             final boolean enableSslReload = ObjectReader.getBoolean(conf.get(DaemonConfig.DRPC_HTTPS_ENABLE_SSL_RELOAD), false);
 
-            //TODO a better way to do this would be great.
+            //TODO: a better way to do this would be great.
             DRPCApplication.setup(drpc, metricsRegistry);
             ret = UIHelpers.jettyCreateServer(drpcHttpPort, null, httpsPort, disableHttpBinding);
             
@@ -119,7 +119,7 @@ public class DRPCServer implements AutoCloseable {
 
             ServletHolder jerseyServlet = context.addServlet(ServletContainer.class, "/*");
             jerseyServlet.setInitOrder(1);
-            jerseyServlet.setInitParameter("javax.ws.rs.Application", DRPCApplication.class.getName());
+            jerseyServlet.setInitParameter("jakarta.ws.rs.Application", DRPCApplication.class.getName());
             
             UIHelpers.configFilters(context, filterConfigurations);
             addRequestContextFilter(context, DaemonConfig.DRPC_HTTP_CREDS_PLUGIN, conf);
@@ -182,7 +182,7 @@ public class DRPCServer implements AutoCloseable {
                 invokeServer.stop();
             }
 
-            //TODO this is causing issues...
+            //TODO: this is causing issues...
             //if (httpServer != null) {
             //    httpServer.destroy();
             //}

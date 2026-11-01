@@ -28,43 +28,50 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This should never be used except for testing.  It provides no security at all. The password is hard coded, and even if it were not it is
+ * This should never be used except for testing. It provides no security at all. The password is
+ * hard coded, and even if it were not it is
  * sent in plain text.
+ * @deprecated This should never be used except for testing as it provides no security.
  */
-@Deprecated
+@Deprecated(since = "2.0.0", forRemoval = true)
 public class PlainSaslTransportPlugin extends SaslTransportPlugin {
     public static final String PLAIN = "PLAIN";
     private static final Logger LOG = LoggerFactory.getLogger(PlainSaslTransportPlugin.class);
 
     @Override
     protected TTransportFactory getServerTransportFactory(boolean impersonationAllowed) throws IOException {
-        //create an authentication callback handler
-        CallbackHandler serverCallbackHandler = new SimpleSaslServerCallbackHandler(impersonationAllowed,
-            (userName) -> Optional.of("password".toCharArray()));
+        // create an authentication callback handler
+        CallbackHandler serverCallbackHandler =
+                new SimpleSaslServerCallbackHandler(impersonationAllowed,
+                    (userName) -> Optional.of("password".toCharArray()));
         if (Security.getProvider(SaslPlainServer.SecurityProvider.SASL_PLAIN_SERVER) == null) {
             Security.addProvider(new SaslPlainServer.SecurityProvider());
         }
-        //create a transport factory that will invoke our auth callback for digest
+        // create a transport factory that will invoke our auth callback for digest
         TSaslServerTransport.Factory factory = new TSaslServerTransport.Factory();
-        factory.addServerDefinition(PLAIN, ClientAuthUtils.SERVICE, "localhost", null, serverCallbackHandler);
+        factory.addServerDefinition(PLAIN, ClientAuthUtils.SERVICE, "localhost", null,
+                serverCallbackHandler);
 
-        LOG.error("SASL PLAIN transport factory will be used.  This is totally insecure.  Please do not use this.");
+        LOG.error("SASL PLAIN transport factory will be used.  This is totally insecure.  Please "
+                + "do not use this.");
         return factory;
     }
 
     @Override
-    public TTransport connect(TTransport transport, String serverHost, String asUser) throws IOException, TTransportException {
+    public TTransport connect(TTransport transport, String serverHost,
+        String asUser) throws IOException, TTransportException {
         PlainClientCallbackHandler clientCallbackHandler = new PlainClientCallbackHandler();
         TSaslClientTransport wrapperTransport = new TSaslClientTransport(PLAIN,
-                                                                         null,
-                                                                         ClientAuthUtils.SERVICE,
-                                                                         serverHost,
-                                                                         null,
-                                                                         clientCallbackHandler,
-                                                                         transport);
+                null,
+                ClientAuthUtils.SERVICE,
+                serverHost,
+                null,
+                clientCallbackHandler,
+                transport);
 
         wrapperTransport.open();
-        LOG.error("SASL PLAIN client transport has been established.  This is totally insecure.  Please do not use this.");
+        LOG.error("SASL PLAIN client transport has been established.  This is totally insecure.  "
+                + "Please do not use this.");
 
         return wrapperTransport;
     }

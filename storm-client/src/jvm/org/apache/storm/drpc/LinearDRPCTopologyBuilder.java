@@ -46,7 +46,6 @@ public class LinearDRPCTopologyBuilder {
     String function;
     List<Component> components = new ArrayList<>();
 
-
     public LinearDRPCTopologyBuilder(String function) {
         this.function = function;
     }
@@ -63,7 +62,15 @@ public class LinearDRPCTopologyBuilder {
         return addBolt(bolt, 1);
     }
 
-    @Deprecated
+    /**
+     * Adds a bolt to the topology.
+     *
+     * @param bolt the rich bolt to add
+     * @param parallelism parallelism hint
+     * @return input declarer
+     * @deprecated please use {@link #addBolt(IBatchBolt, Number)} or {@link #addBolt(IBasicBolt, Number)} instead.
+     */
+    @Deprecated(forRemoval = true)
     public LinearDRPCInputDeclarer addBolt(IRichBolt bolt, Number parallelism) {
         if (parallelism == null) {
             parallelism = 1;
@@ -73,7 +80,14 @@ public class LinearDRPCTopologyBuilder {
         return new InputDeclarerImpl(component);
     }
 
-    @Deprecated
+    /**
+     * Adds a bolt to the topology.
+     *
+     * @param bolt the rich bolt to add
+     * @return input declarer
+     * @deprecated please use {@link #addBolt(IBatchBolt)} or {@link #addBolt(IBasicBolt)} instead.
+     */
+    @Deprecated(forRemoval = true)
     public LinearDRPCInputDeclarer addBolt(IRichBolt bolt) {
         return addBolt(bolt, null);
     }
@@ -101,7 +115,7 @@ public class LinearDRPCTopologyBuilder {
         TopologyBuilder builder = new TopologyBuilder();
         builder.setSpout(SPOUT_ID, spout);
         builder.setBolt(PREPARE_ID, new PrepareRequest())
-               .noneGrouping(SPOUT_ID);
+                .noneGrouping(SPOUT_ID);
         int i = 0;
         for (; i < components.size(); i++) {
             Component component = components.get(i);
@@ -117,9 +131,9 @@ public class LinearDRPCTopologyBuilder {
                 idSpec = IdStreamSpec.makeDetectSpec(PREPARE_ID, PrepareRequest.ID_STREAM);
             }
             BoltDeclarer declarer = builder.setBolt(
-                boltId(i),
-                new CoordinatedBolt(component.bolt, source, idSpec),
-                component.parallelism);
+                    boltId(i),
+                    new CoordinatedBolt(component.bolt, source, idSpec),
+                    component.parallelism);
 
             for (SharedMemory request : component.sharedMemory) {
                 declarer.addSharedMemory(request);
@@ -130,7 +144,8 @@ public class LinearDRPCTopologyBuilder {
             }
 
             if (idSpec != null) {
-                declarer.fieldsGrouping(idSpec.getGlobalStreamId().get_componentId(), PrepareRequest.ID_STREAM, new Fields("request"));
+                declarer.fieldsGrouping(idSpec.getGlobalStreamId().get_componentId(),
+                        PrepareRequest.ID_STREAM, new Fields("request"));
             }
             if (i == 0 && component.declarations.isEmpty()) {
                 declarer.noneGrouping(PREPARE_ID, PrepareRequest.ARGS_STREAM);
@@ -155,22 +170,25 @@ public class LinearDRPCTopologyBuilder {
         lastBolt.declareOutputFields(getter);
         Map<String, StreamInfo> streams = getter.getFieldsDeclaration();
         if (streams.size() != 1) {
-            throw new RuntimeException("Must declare exactly one stream from last bolt in LinearDRPCTopology");
+            throw new RuntimeException("Must declare exactly one stream from last bolt in "
+                    + "LinearDRPCTopology");
         }
         String outputStream = streams.keySet().iterator().next();
         List<String> fields = streams.get(outputStream).get_output_fields();
         if (fields.size() != 2) {
             throw new RuntimeException(
-                "Output stream of last component in LinearDRPCTopology must contain exactly two fields. "
-                + "The first should be the request id, and the second should be the result.");
+                    "Output stream of last component in LinearDRPCTopology must contain exactly "
+                    + "two fields. "
+                            + "The first should be the request id, and the second should be the "
+                            + "result.");
         }
 
         builder.setBolt(boltId(i), new JoinResult(PREPARE_ID))
-               .fieldsGrouping(boltId(i - 1), outputStream, new Fields(fields.get(0)))
-               .fieldsGrouping(PREPARE_ID, PrepareRequest.RETURN_STREAM, new Fields("request"));
+                .fieldsGrouping(boltId(i - 1), outputStream, new Fields(fields.get(0)))
+                .fieldsGrouping(PREPARE_ID, PrepareRequest.RETURN_STREAM, new Fields("request"));
         i++;
         builder.setBolt(boltId(i), new ReturnResults())
-               .noneGrouping(boltId(i - 1));
+                .noneGrouping(boltId(i - 1));
         return builder.createTopology();
     }
 
@@ -374,7 +392,8 @@ public class LinearDRPCTopologyBuilder {
         }
 
         @Override
-        public LinearDRPCInputDeclarer customGrouping(final String streamId, final CustomStreamGrouping grouping) {
+        public LinearDRPCInputDeclarer customGrouping(final String streamId,
+            final CustomStreamGrouping grouping) {
             addDeclaration(new InputDeclaration() {
                 @Override
                 public void declare(String prevComponent, InputDeclarer declarer) {
@@ -397,7 +416,7 @@ public class LinearDRPCTopologyBuilder {
         }
 
         /**
-         * return the current component configuration.
+         * Return the current component configuration.
          *
          * @return the current configuration.
          */

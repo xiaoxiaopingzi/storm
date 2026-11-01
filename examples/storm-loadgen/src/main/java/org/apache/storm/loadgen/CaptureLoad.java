@@ -25,6 +25,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import net.minidev.json.JSONObject;
+import net.minidev.json.JSONValue;
+import net.minidev.json.parser.JSONParser;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -35,7 +38,6 @@ import org.apache.commons.cli.ParseException;
 import org.apache.storm.Config;
 import org.apache.storm.generated.Bolt;
 import org.apache.storm.generated.BoltStats;
-import org.apache.storm.generated.ClusterSummary;
 import org.apache.storm.generated.ComponentCommon;
 import org.apache.storm.generated.ExecutorSummary;
 import org.apache.storm.generated.GlobalStreamId;
@@ -50,9 +52,6 @@ import org.apache.storm.generated.TopologySummary;
 import org.apache.storm.generated.WorkerSummary;
 import org.apache.storm.utils.NimbusClient;
 import org.apache.storm.utils.ObjectReader;
-import org.json.simple.JSONObject;
-import org.json.simple.JSONValue;
-import org.json.simple.parser.JSONParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,7 +96,7 @@ public class CaptureLoad {
 
         Map<String, Object> savedTopoConf = new HashMap<>();
         Map<String, Object> topoConf = (Map<String, Object>) JSONValue.parse(client.getTopologyConf(topologyId));
-        for (String key: TopologyLoadConf.IMPORTANT_CONF_KEYS) {
+        for (String key : TopologyLoadConf.IMPORTANT_CONF_KEYS) {
             Object o = topoConf.get(key);
             if (o != null) {
                 savedTopoConf.put(key, o);
@@ -154,7 +153,7 @@ public class CaptureLoad {
             }
 
             Map<String, Map<String, Double>> boltResources = getBoltsResources(topo, topoConf);
-            for (Map.Entry<String, Map<String, Double>> entry: boltResources.entrySet()) {
+            for (Map.Entry<String, Map<String, Double>> entry : boltResources.entrySet()) {
                 LoadCompConf.Builder bd = boltBuilders.get(entry.getKey());
                 if (bd != null) {
                     Map<String, Double> resources = entry.getValue();
@@ -195,7 +194,7 @@ public class CaptureLoad {
             }
 
             Map<String, Map<String, Double>> spoutResources = getSpoutsResources(topo, topoConf);
-            for (Map.Entry<String, Map<String, Double>> entry: spoutResources.entrySet()) {
+            for (Map.Entry<String, Map<String, Double>> entry : spoutResources.entrySet()) {
                 LoadCompConf.Builder sd = spoutBuilders.get(entry.getKey());
                 if (sd != null) {
                     Map<String, Double> resources = entry.getValue();
@@ -213,7 +212,7 @@ public class CaptureLoad {
 
         //Stats...
         Map<String, List<ExecutorSummary>> byComponent = new HashMap<>();
-        for (ExecutorSummary executor: info.get_executors()) {
+        for (ExecutorSummary executor : info.get_executors()) {
             String component = executor.get_component_id();
             List<ExecutorSummary> list = byComponent.get(component);
             if (list == null) {
@@ -251,7 +250,7 @@ public class CaptureLoad {
             List<Double> emittedRate = new ArrayList<>();
             List<ExecutorSummary> summaries = byComponent.get(id.get_componentId());
             if (summaries != null) {
-                for (ExecutorSummary summary: summaries) {
+                for (ExecutorSummary summary : summaries) {
                     if (summary.is_set_stats()) {
                         int uptime = summary.get_uptime_secs();
                         LOG.debug("UPTIME {}", uptime);
@@ -346,11 +345,11 @@ public class CaptureLoad {
         LOG.info("Will save captured topologies to {}", baseOut);
         baseOut.mkdirs();
 
-        try (NimbusClient nc = NimbusClient.getConfiguredClient(conf)) {
+        try (NimbusClient nc = NimbusClient.Builder.withConf(conf).build()) {
             Nimbus.Iface client = nc.getClient();
             List<String> topologyNames = cmd.getArgList();
 
-            for (TopologySummary topologySummary: client.getTopologySummaries()) {
+            for (TopologySummary topologySummary : client.getTopologySummaries()) {
                 if (topologyNames.isEmpty() || topologyNames.contains(topologySummary.get_name())) {
                     TopologyLoadConf capturedConf = captureTopology(client, topologySummary);
                     if (cmd.hasOption('a')) {
@@ -419,7 +418,7 @@ public class CaptureLoad {
                 }
                 LOG.debug("Topology Resources {}", topologyResources);
             }
-        } catch (org.json.simple.parser.ParseException e) {
+        } catch (net.minidev.json.parser.ParseException e) {
             LOG.error("Failed to parse component resources is:" + e.toString(), e);
             return null;
         }

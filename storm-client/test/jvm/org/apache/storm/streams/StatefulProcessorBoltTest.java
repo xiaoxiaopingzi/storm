@@ -12,11 +12,14 @@
 
 package org.apache.storm.streams;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import org.apache.storm.shade.com.google.common.collect.Multimap;
-import org.apache.storm.shade.org.jgrapht.DirectedGraph;
+import org.apache.storm.shade.org.jgrapht.Graph;
 import org.apache.storm.shade.org.jgrapht.graph.DefaultDirectedGraph;
 import org.apache.storm.state.KeyValueState;
 import org.apache.storm.streams.operations.StateUpdater;
@@ -32,18 +35,15 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 /**
- * Unit tests for {@link StatefulProcessorBolt}
+ * Unit tests for {@link StatefulProcessorBolt}.
  */
 public class StatefulProcessorBoltTest {
     TopologyContext mockTopologyContext;
     OutputCollector mockOutputCollector;
     StatefulProcessorBolt<String, Long> bolt;
     Tuple mockTuple1;
-    DirectedGraph<Node, Edge> graph;
+    Graph<Node, Edge> graph;
     Multimap<String, ProcessorNode> mockStreamToProcessors;
     KeyValueState<String, Long> mockKeyValueState;
 
@@ -59,7 +59,8 @@ public class StatefulProcessorBoltTest {
 
     @Test
     public void testEmitAndAck() {
-        setUpStatefulProcessorBolt(new UpdateStateByKeyProcessor<>(new StateUpdater<Object, Long>() {
+        setUpStatefulProcessorBolt(new UpdateStateByKeyProcessor<>(new StateUpdater<Object,
+                Long>() {
             @Override
             public Long init() {
                 return 0L;
@@ -76,7 +77,7 @@ public class StatefulProcessorBoltTest {
         ArgumentCaptor<String> os = ArgumentCaptor.forClass(String.class);
         Mockito.verify(mockOutputCollector).emit(os.capture(), anchor.capture(), values.capture());
         assertEquals("outputstream", os.getValue());
-        assertArrayEquals(new Object[]{ mockTuple1 }, anchor.getValue().toArray());
+        assertArrayEquals(new Object[] {mockTuple1}, anchor.getValue().toArray());
         assertEquals(new Values("k", 1L), values.getValue());
         Mockito.verify(mockOutputCollector, Mockito.times(1)).ack(mockTuple1);
         Mockito.verify(mockKeyValueState, Mockito.times(1)).put("k", 1L);
@@ -85,8 +86,9 @@ public class StatefulProcessorBoltTest {
     private void setUpStatefulProcessorBolt(Processor<?> processor) {
         ProcessorNode node = new ProcessorNode(processor, "outputstream", new Fields("value"));
         node.setEmitsPair(true);
-        Mockito.when(mockStreamToProcessors.get(Mockito.anyString())).thenReturn(Collections.singletonList(node));
-        graph = new DefaultDirectedGraph(new StreamsEdgeFactory());
+        Mockito.when(mockStreamToProcessors.get(Mockito.anyString())).thenReturn(Collections
+                .singletonList(node));
+        graph = new DefaultDirectedGraph<>(null, null, false);
         graph.addVertex(node);
         bolt = new StatefulProcessorBolt<>("bolt1", graph, Collections.singletonList(node));
         bolt.setStreamToInitialProcessors(mockStreamToProcessors);

@@ -20,22 +20,24 @@ import java.security.Principal;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import javax.security.auth.Subject;
-import javax.security.auth.login.Configuration;
 import org.apache.storm.thrift.TException;
 import org.apache.storm.thrift.TProcessor;
 import org.apache.storm.thrift.protocol.TBinaryProtocol;
 import org.apache.storm.thrift.protocol.TProtocol;
 import org.apache.storm.thrift.server.THsHaServer;
 import org.apache.storm.thrift.server.TServer;
-import org.apache.storm.thrift.transport.TFramedTransport;
 import org.apache.storm.thrift.transport.TMemoryInputTransport;
 import org.apache.storm.thrift.transport.TNonblockingServerSocket;
 import org.apache.storm.thrift.transport.TSocket;
 import org.apache.storm.thrift.transport.TTransport;
 import org.apache.storm.thrift.transport.TTransportException;
+import org.apache.storm.thrift.transport.layered.TFramedTransport;
+import org.apache.storm.utils.StormThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,12 +77,24 @@ public class SimpleTransportPlugin implements ITransportPlugin {
 
         serverArgs.maxReadBufferBytes = maxBufferSize;
 
-        if (queueSize != null) {
+        if (queueSize != null || StormThreadFactory.isVirtualEnabled(topoConf)) {
+            // THsHaServer builds its own platform-thread pool (core 5, unbounded
+            // LinkedBlockingQueue) when no executor is supplied, so when virtual threads are
+            // requested we always supply an executor; without a configured queue size we use the
+            // same unbounded queue so no request is rejected that would not be rejected today. Note
+            // that this raises the effective handler concurrency from THsHaServer's 5 to
+            // numWorkerThreads. That is always the case for DRPC_INVOCATIONS, which has no queue
+            // size key at all, and for any Nimbus, Supervisor or DRPC server whose *.queue.size was
+            // explicitly unset.
+            BlockingQueue<Runnable> workQueue = queueSize != null
+                ? new ArrayBlockingQueue<>(queueSize)
+                : new LinkedBlockingQueue<>();
             serverArgs.executorService(new ThreadPoolExecutor(numWorkerThreads, numWorkerThreads,
-                                                               60, TimeUnit.SECONDS, new ArrayBlockingQueue(queueSize)));
+                    60, TimeUnit.SECONDS, workQueue,
+                    StormThreadFactory.create(topoConf, type.getHandlerThreadNamePrefix())));
         }
 
-        //construct THsHaServer
+        // construct THsHaServer
         return new THsHaServer(serverArgs);
     }
 
@@ -92,12 +106,13 @@ public class SimpleTransportPlugin implements ITransportPlugin {
      * @param asUser     unused
      */
     @Override
-    public TTransport connect(TTransport transport, String serverHost, String asUser) throws TTransportException {
+    public TTransport connect(TTransport transport, String serverHost,
+        String asUser) throws TTransportException {
         int maxBufferSize = type.getMaxBufferSize(topoConf);
-        //create a framed transport
+        // create a framed transport
         TTransport conn = new TFramedTransport(transport, maxBufferSize);
 
-        //connect
+        // connect
         conn.open();
         LOG.debug("Simple client transport has been established");
 
@@ -106,6 +121,7 @@ public class SimpleTransportPlugin implements ITransportPlugin {
 
     /**
      * Get default subject.
+     *
      * @return the subject that will be used for all connections
      */
     protected Subject getDefaultSubject() {
@@ -118,7 +134,8 @@ public class SimpleTransportPlugin implements ITransportPlugin {
     }
 
     /**
-     * Processor that populate simple transport info into ReqContext, and then invoke a service handler.
+     * Processor that populate simple transport info into ReqContext, and then invoke a service
+     * handler.
      */
     private class SimpleWrapProcessor implements TProcessor {
         final TProcessor wrapped;
@@ -129,7 +146,7 @@ public class SimpleTransportPlugin implements ITransportPlugin {
 
         @Override
         public void process(final TProtocol inProt, final TProtocol outProt) throws TException {
-            //populating request context 
+            // populating request context 
             ReqContext reqContext = ReqContext.context();
 
             TTransport trans = inProt.getTransport();
@@ -141,12 +158,12 @@ public class SimpleTransportPlugin implements ITransportPlugin {
                 }
             } else if (trans instanceof TSocket) {
                 TSocket tsocket = (TSocket) trans;
-                //remote address
+                // remote address
                 Socket socket = tsocket.getSocket();
                 reqContext.setRemoteAddress(socket.getInetAddress());
             }
 
-            //anonymous user
+            // anonymous user
             Subject s = getDefaultSubject();
             if (s == null) {
                 final String user = (String) topoConf.get("debug.simple.transport.user");
@@ -168,7 +185,7 @@ public class SimpleTransportPlugin implements ITransportPlugin {
             }
             reqContext.setSubject(s);
 
-            //invoke service handler
+            // invoke service handler
             wrapped.process(inProt, outProt);
         }
     }
